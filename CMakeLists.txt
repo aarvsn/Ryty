@@ -31,7 +31,7 @@ if(APPLE)
     target_link_libraries(ryty_metal PRIVATE "-framework Metal" "-framework MetalKit" "-framework Cocoa" "-framework QuartzCore")
 endif()
 
-if(NOT WIN32)
+if(NOT WIN32 AND NOT APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
 endif()
 
