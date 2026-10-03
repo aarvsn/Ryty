@@ -69,11 +69,13 @@ jobs:
           cmake --preset linux-release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake"
 
+      - name: Build
+        run: cmake --build build/linux-release --parallel
+
       - name: Locate build directory and binaries
         id: locate
         run: |
-          BUILD_DIR="$(find "$GITHUB_WORKSPACE" -name CMakeCache.txt \
-                        -not -path '*/3rdparty/*' | head -n1 | xargs dirname)"
+          BUILD_DIR="build/linux-release"
           CLI_EXE="$(find "$BUILD_DIR" -type f -name ryty | head -n1)"
           GUI_EXE="$(find "$BUILD_DIR" -type f -name ryty-gui | head -n1)"
           echo "build_dir=$BUILD_DIR"        >> "$GITHUB_OUTPUT"
@@ -81,11 +83,8 @@ jobs:
           echo "gui_exe=$GUI_EXE"            >> "$GITHUB_OUTPUT"
           test -n "$CLI_EXE" && test -n "$GUI_EXE"
 
-      - name: Build
-        run: cmake --build "${{ steps.locate.outputs.build_dir }}" --parallel
-
       - name: Run tests
-        run: ctest --test-dir "${{ steps.locate.outputs.build_dir }}" --output-on-failure --parallel 2
+        run: ctest --test-dir build/linux-release --output-on-failure --parallel 2
 
       - name: Bundle GUI into AppImage (Qt6 runtime embedded)
         run: |
@@ -208,11 +207,13 @@ jobs:
       - name: Configure (windows-release preset)
         run: cmake --preset windows-release
 
+      - name: Build
+        run: cmake --build build/windows-release --parallel
+
       - name: Locate build directory and binaries
         id: locate
         run: |
-          BUILD_DIR="$(find "$GITHUB_WORKSPACE" -name CMakeCache.txt \
-                        -not -path '*/3rdparty/*' | head -n1 | xargs dirname)"
+          BUILD_DIR="build/windows-release"
           CLI_EXE="$(find "$BUILD_DIR" -type f -name ryty.exe | head -n1)"
           GUI_EXE="$(find "$BUILD_DIR" -type f -name ryty-gui.exe | head -n1)"
           echo "build_dir=$BUILD_DIR" >> "$GITHUB_OUTPUT"
@@ -220,11 +221,8 @@ jobs:
           echo "gui_exe=$GUI_EXE"     >> "$GITHUB_OUTPUT"
           test -n "$CLI_EXE" && test -n "$GUI_EXE"
 
-      - name: Build
-        run: cmake --build "${{ steps.locate.outputs.build_dir }}" --parallel
-
       - name: Run tests
-        run: ctest --test-dir "${{ steps.locate.outputs.build_dir }}" --output-on-failure --parallel 2
+        run: ctest --test-dir build/windows-release --output-on-failure --parallel 2
 
       - name: Deploy Qt6 runtime next to the GUI (windeployqt)
         run: |
@@ -288,15 +286,8 @@ jobs:
       - name: Configure (linux-release-cli preset, no Qt installed)
         run: cmake --preset linux-release-cli
 
-      - name: Locate build directory
-        id: locate
-        run: |
-          BUILD_DIR="$(find "$GITHUB_WORKSPACE" -name CMakeCache.txt \
-                        -not -path '*/3rdparty/*' | head -n1 | xargs dirname)"
-          echo "build_dir=$BUILD_DIR" >> "$GITHUB_OUTPUT"
-
       - name: Build
-        run: cmake --build "${{ steps.locate.outputs.build_dir }}" --parallel
+        run: cmake --build build/linux-release-cli --parallel
 
       - name: Run tests
-        run: ctest --test-dir "${{ steps.locate.outputs.build_dir }}" --output-on-failure --parallel 2
+        run: ctest --test-dir build/linux-release-cli --output-on-failure --parallel 2
