@@ -6,8 +6,8 @@
 ryty [options] <input.elf> <output>
 ```
 
-The input is a PS5 ELF executable (`eboot.bin` or a decrypted self). The
-output is a native Linux ELF or, with `--windows`, a Windows PE executable.
+The input is a PS5 or PS4 ELF executable (`eboot.bin` or a decrypted self). The
+output is a native Linux ELF, a Windows PE executable with `--windows`, or an experimental macOS Mach-O executable with `--macos`.
 Unsupported or unexpected states strictly fail with `FAIL: <reason>` and a
 nonzero exit code; nothing is silently approximated.
 
@@ -16,6 +16,10 @@ nonzero exit code; nothing is silently approximated.
 | Option | Effect |
 | ------ | ------ |
 | `--windows` | Produce a Windows PE executable instead of a Linux ELF. |
+| `--macos` | Produce an experimental macOS Mach-O executable with Metal graphics API support. |
+| `--ps4` | Treat input executable as a PlayStation 4 game binary. |
+| `--ps5` | Treat input executable as a PlayStation 5 game binary. |
+| `--console <auto\|ps4\|ps5>` | Console platform selection (default `auto`). |
 | `--to-intel` | Lower AMD-only instructions in the executable and bundled PRX files (see [instruction lowering](../dev/INSTRUCTION_LOWERING.md)). Recommended on Intel hosts. |
 | `unused-filter=0\|1\|2` | Unused NID filter level. `0` keeps every reference; `1` runs the CFG/GOT filter and is resilient - when the analysis cannot run, every reference is kept and a warning is printed; `2` runs the strict reachability filter and compacts the PLT. |
 | `--skip-sce-module` | Do not process `sce_module`/`sce_modules` PRX files. |

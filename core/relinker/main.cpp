@@ -3,6 +3,7 @@
 #include <io/FileReader.hpp>
 #include <io/FileWriter.hpp>
 #include <elfpatcher/linux/LinuxElfPatcher.hpp>
+#include <elfpatcher/macos/MacOsElfPatcher.hpp>
 #include <elfpatcher/general/SegmentFilter.hpp>
 #include <elfpatcher/general/EntryStubBuilder.hpp>
 #include <elfpatcher/general/ProgramHeaderLayoutBuilder.hpp>
@@ -87,6 +88,16 @@ int main(const int argc, char* argv[]) {
         }
 
         auto elfReader = std::make_shared<Relinker::ElfReader>(sourceBytes);
+
+        std::string consoleTargetStr = "ps5";
+        if (args.consoleMode == Cli::ConsoleMode::PS4) {
+            consoleTargetStr = "ps4";
+        } else if (args.consoleMode == Cli::ConsoleMode::PS5) {
+            consoleTargetStr = "ps5";
+        } else {
+            consoleTargetStr = elfReader->DetectConsoleTarget();
+        }
+
         const std::shared_ptr<Relinker::ISyscallScanner> syscallScanner = args.skipSyscallCheck ? Relinker::MakeNullSyscallScanner() : Relinker::MakeSyscallScanner();
 
         const auto pipeline = std::make_shared<Relinker::RelinkerPipeline>(
@@ -96,10 +107,11 @@ int main(const int argc, char* argv[]) {
             std::make_shared<Relinker::ValidationPolicy>(),
             std::make_shared<Relinker::SysVDynamicSectionBuilder>(),
             args.unusedFilterLevel == 2 ? Relinker::MakeStrictUnusedNidFilter() : Relinker::MakeUnusedNidFilter(),
-            args.unusedFilterLevel
+            args.unusedFilterLevel,
+            consoleTargetStr
         );
 
-        std::cout << "System: " << (args.toWindows ? "Windows" : "Linux") << "; unused-filter=" << args.unusedFilterLevel << "\n";
+        std::cout << "Console: " << consoleTargetStr << "; System: " << (args.toMacOs ? "macOS" : (args.toWindows ? "Windows" : "Linux")) << "; unused-filter=" << args.unusedFilterLevel << "\n";
         std::cout << "sce_module/sce_modules processing: " << (args.skipSceModule ? "disabled (--skip-sce-module)" : "enabled") << '\n';
         for (const auto& name : args.excludedSceModules) std::cout << "sce_module excluded: " << name << '\n';
         auto result = pipeline->Relink(sourceBytes);
@@ -125,6 +137,8 @@ int main(const int argc, char* argv[]) {
         std::shared_ptr<Elfpatcher::IElfPatcher> patcher;
         if (args.toWindows) {
             patcher = std::make_shared<Elfpatcher::Windows::WindowsPePatcher>(args.windowsGui);
+        } else if (args.toMacOs) {
+            patcher = std::make_shared<Elfpatcher::MacOs::MacOsElfPatcher>();
         } else {
             patcher = std::make_shared<Elfpatcher::Linux::LinuxElfPatcher>(
                 std::make_shared<Elfpatcher::EntryStubBuilder>(),
@@ -161,7 +175,8 @@ int main(const int argc, char* argv[]) {
             report << "  \"schema\": \"ryty-port-report/1\",\n";
             report << "  \"input\": \"" << escapeJson(args.inputPath) << "\",\n";
             report << "  \"output\": \"" << escapeJson(absPath) << "\",\n";
-            report << "  \"system\": \"" << (args.toWindows ? "windows" : "linux") << "\",\n";
+            report << "  \"console\": \"" << escapeJson(consoleTargetStr) << "\",\n";
+            report << "  \"system\": \"" << (args.toMacOs ? "macos" : (args.toWindows ? "windows" : "linux")) << "\",\n";
             report << "  \"options\": {\n";
             report << "    \"toIntel\": " << (args.toIntel ? "true" : "false") << ",\n";
             report << "    \"unusedFilterLevel\": " << args.unusedFilterLevel << ",\n";

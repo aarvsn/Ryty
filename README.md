@@ -1,7 +1,7 @@
 # Ryty
 
-Automatic porting of PlayStation 5 executables to native Linux and Windows
-binaries.
+Automatic porting of PlayStation 5 and PlayStation 4 executables to native Linux, Windows,
+and experimental macOS binaries.
 
 Ryty includes a [relinker](core/relinker) that converts the executable to the
 target system's native format and implementations of
@@ -20,7 +20,9 @@ Ryty is a fork of [AnyPS5](https://github.com/boykopovar/AnyPS5) - see
   PREFETCHW, FEMMS, MONITORX/MWAITX, CLZERO, EXTRQ/INSERTQ and MOVNTSS/SD
   are lowered in place or through out-of-line stubs; short sites absorb
   neighbouring instructions.
-* **Qt6 GUI** (`ryty-gui`) on Linux and Windows, shipped with the Qt6 runtime
+* **PlayStation 4 and PlayStation 5 Support** - Auto-detection and explicit console selection (`--ps4`, `--ps5`, `--console auto|ps4|ps5`) to port both PS4 and PS5 executables.
+* **Experimental macOS Target with Metal** - `--macos` target support with Objective-C / Objective-C++ Metal API graphics rendering bridge.
+* **Qt6 GUI** (`ryty-gui`) on Linux, Windows, and macOS, shipped with the Qt6 runtime
   bundled (self-contained AppImage on Linux, windeployqt DLL set on Windows).
 * **JSON porting report** (`--report`) with per-site substitutions, summary
   counters and warnings.

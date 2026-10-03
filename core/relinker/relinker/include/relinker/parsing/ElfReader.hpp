@@ -20,6 +20,7 @@ public:
     std::vector<ProgramHeader> ReadCodeSegments() const override;
     std::uint64_t GetFileSize() const override;
     const std::vector<std::uint8_t>& GetRawBytes() const override;
+    std::string DetectConsoleTarget() const;
 
 private:
     std::vector<std::uint8_t> _fileBuffer;

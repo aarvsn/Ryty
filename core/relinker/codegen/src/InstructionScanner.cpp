@@ -25,6 +25,7 @@ std::vector<InstructionMatch> InstructionScanner::ScanCodeSection(
 
     const X64InstructionDecoder decoder;
     std::vector<InstructionMatch> matches;
+    matches.reserve(limit / 3 + 16);
     std::size_t i = 0;
 
     while (i < limit) {

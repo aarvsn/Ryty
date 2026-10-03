@@ -21,7 +21,17 @@ add_compile_definitions(RTY_ENABLE_TIMING_LOG=$<BOOL:${RTY_ENABLE_TIMING_LOG}>)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT WIN32)
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+    add_library(ryty_metal STATIC
+        core/libs/metal/RytyMetalRenderer.m
+        core/libs/metal/RytyMetalView.mm
+    )
+    target_include_directories(ryty_metal PUBLIC core/libs/metal)
+    target_link_libraries(ryty_metal PRIVATE "-framework Metal" "-framework MetalKit" "-framework Cocoa" "-framework QuartzCore")
+endif()
+
+if(NOT WIN32 AND NOT APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
 endif()
 

@@ -1,7 +1,7 @@
 # Porting pipeline
 
-Ryty converts a PS5 executable into a native Linux or Windows executable
-without emulation: guest code runs as host code, and PS5 system calls are
+Ryty converts a PS5 or PS4 executable into a native Linux, Windows, or macOS executable
+without emulation: guest code runs as host code, and PS5/PS4 system calls are
 served by the bundled PRX library implementations. The pipeline:
 
 1. **Read** - `ElfReader` parses the ELF header, program headers, sections
@@ -29,10 +29,10 @@ served by the bundled PRX library implementations. The pipeline:
    built by `SysVDynamicSectionBuilder`.
 7. **Guest modules** - `sce_module`/`sce_modules` PRX files are re-linked
    with the same Intel conversion when present (skippable).
-8. **Patching** - `LinuxElfPatcher` or `WindowsElfPatcher` writes the final
-   headers, entry stub and (for Windows) import tables, trampolines and TLS
-   templates. Trampolines are placed within reachable relative-jump distance
-   of their sites.
+8. **Patching** - `LinuxElfPatcher`, `WindowsElfPatcher`, or `MacOsElfPatcher` writes the final
+   headers, entry stub and target system structures (PE import tables for Windows, Mach-O
+   load commands and Metal API wrapper headers for macOS). Trampolines are placed within
+   reachable relative-jump distance of their sites.
 
 ## Failure model
 

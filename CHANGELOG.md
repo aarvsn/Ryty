@@ -4,6 +4,17 @@ All notable changes to Ryty are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-03
+
+### Added
+- **PlayStation 4 game support**: Auto-detection and explicit console selection (`--ps4`, `--ps5`, `--console auto|ps4|ps5`) in CLI and GUI to support porting PlayStation 4 executables.
+- **Experimental macOS support**: Experimental target system (`--macos` / `--target macos`) with Mach-O binary emission (`MacOsElfPatcher`), Objective-C (`.m`) and Objective-C++ (`.mm`) runtime support, and Apple's Metal graphics renderer bridge (`RytyMetalRenderer`, `RytyMetalView`).
+- **Target System in GUI**: Added "macOS (Mach-O / Metal, experimental)" to the Qt6 GUI launcher.
+
+### Optimized
+- **Instruction Scanner**: Fast-path prefix filtering for AMD64-only instruction scanning, skipping non-AMD instructions in bulk.
+- **Memory allocations & lookups**: Pre-allocated container capacities and optimized lookup indexes in `ControlFlowGraph`, `GotAccessIndex`, `CacheKey`, and I/O buffer routines (`ByteReader`, `ByteWriter`).
+
 ## [1.0.0] - 2026-10-03
 
 Ryty 1.0 is the first release of the fork of AnyPS5. It keeps the upstream

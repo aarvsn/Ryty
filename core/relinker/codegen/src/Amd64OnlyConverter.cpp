@@ -92,6 +92,7 @@ void Amd64OnlyConverter::_convertSegment(
     const auto matches = _atFileOffset(ph.Offset, [&] { return _scanner->ScanCodeSection(seg, 0, seg.size()); });
 
     std::vector<Pending> pending;
+    pending.reserve(matches.size() / 10 + 8);
     for (std::size_t index = 0; index < matches.size(); ++index) {
         const auto& match = matches[index];
         auto substitution = _atFileOffset(ph.Offset + match.Offset, [&] { return _matcher->Match(seg.data() + match.Offset, match.Length); });
