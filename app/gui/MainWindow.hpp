@@ -40,6 +40,7 @@ private:
     QLineEdit* _outputPath = nullptr;
     QLineEdit* _reportPath = nullptr;
     QComboBox* _targetSystem = nullptr;
+    QComboBox* _consolePlatform = nullptr;
     QComboBox* _unusedFilter = nullptr;
     QLineEdit* _runPath = nullptr;
     QCheckBox* _toIntel = nullptr;

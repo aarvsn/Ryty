@@ -255,4 +255,17 @@ std::uint64_t ElfReader::GetFileSize() const {
     return _fileBuffer.size();
 }
 
+std::string ElfReader::DetectConsoleTarget() const {
+    // PS4 games commonly reference libSceGnmDriver, libkernel.sprx, libkernel.prx, or libScePad
+    // PS5 games reference libSceAgcDriver, libkernel_sys, or libkernel_web
+    const std::string_view content(reinterpret_cast<const char*>(_fileBuffer.data()), _fileBuffer.size());
+    if (content.find("libSceGnmDriver") != std::string_view::npos ||
+        content.find("libkernel.sprx") != std::string_view::npos ||
+        content.find("libkernel.prx") != std::string_view::npos ||
+        content.find("libScePad.sprx") != std::string_view::npos) {
+        return "ps4";
+    }
+    return "ps5";
+}
+
 }

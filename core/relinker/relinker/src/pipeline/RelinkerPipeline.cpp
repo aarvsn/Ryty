@@ -7,7 +7,7 @@
 
 namespace Relinker {
 
-RelinkerPipeline::RelinkerPipeline(std::shared_ptr<IElfReader> elfReader, std::shared_ptr<ISyscallScanner> syscallScanner, std::shared_ptr<ICallSiteResolver> callSiteResolver, std::shared_ptr<IValidationPolicy> validationPolicy, std::shared_ptr<ISysVDynamicSectionBuilder> dynamicSectionBuilder, std::shared_ptr<IUnusedNidFilter> unusedNidFilter, std::uint32_t unusedFilterLevel)
+RelinkerPipeline::RelinkerPipeline(std::shared_ptr<IElfReader> elfReader, std::shared_ptr<ISyscallScanner> syscallScanner, std::shared_ptr<ICallSiteResolver> callSiteResolver, std::shared_ptr<IValidationPolicy> validationPolicy, std::shared_ptr<ISysVDynamicSectionBuilder> dynamicSectionBuilder, std::shared_ptr<IUnusedNidFilter> unusedNidFilter, std::uint32_t unusedFilterLevel, std::string consoleTarget)
     : _elfReader(std::move(elfReader))
     , _syscallScanner(std::move(syscallScanner))
     , _callSiteResolver(std::move(callSiteResolver))
@@ -15,6 +15,7 @@ RelinkerPipeline::RelinkerPipeline(std::shared_ptr<IElfReader> elfReader, std::s
     , _dynamicSectionBuilder(std::move(dynamicSectionBuilder))
     , _unusedNidFilter(std::move(unusedNidFilter))
     , unusedFilterLevel(unusedFilterLevel)
+    , _consoleTarget(std::move(consoleTarget))
 {
     if (unusedFilterLevel > 2) throw RelinkerException("Unused NID filter level must be 0, 1 or 2");
 }
@@ -214,6 +215,12 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
         _syscallScanner->ScanCodeSectionForSyscalls(textSection, textVAddr, textSection.size());
 
     _validationPolicy->ValidateSyscallAbsence();
+
+    if (_consoleTarget == "ps4") {
+        std::cout << "Relinker backend mode: PlayStation 4 (processing PS4 PRX/NID imports & FreeBSD relocations)\n";
+    } else {
+        std::cout << "Relinker backend mode: PlayStation 5\n";
+    }
 
     static constexpr std::uint32_t R_X86_64_JUMP_SLOT = 7;
 

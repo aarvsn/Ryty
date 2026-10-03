@@ -39,6 +39,20 @@ Args ParseArgs(int argc, char* argv[]) {
             args.runPath = argv[++i];
         } else if (arg == "--windows") {
             args.toWindows = true;
+        } else if (arg == "--macos") {
+            args.toMacOs = true;
+        } else if (arg == "--ps4") {
+            args.consoleMode = ConsoleMode::PS4;
+        } else if (arg == "--ps5") {
+            args.consoleMode = ConsoleMode::PS5;
+        } else if (arg == "--console") {
+            if (i + 1 >= argc)
+                throw std::runtime_error("--console requires a mode (auto, ps4, ps5)");
+            const std::string mode = argv[++i];
+            if (mode == "ps4" || mode == "PS4") args.consoleMode = ConsoleMode::PS4;
+            else if (mode == "ps5" || mode == "PS5") args.consoleMode = ConsoleMode::PS5;
+            else if (mode == "auto" || mode == "AUTO") args.consoleMode = ConsoleMode::Auto;
+            else throw std::runtime_error("unknown console mode: " + mode);
         } else if (arg == "--lazy-binding") {
             args.lazyBinding = true;
         } else if (arg == "--autorun") {
@@ -61,6 +75,9 @@ Args ParseArgs(int argc, char* argv[]) {
     if (args.skipSceModule && !args.excludedSceModules.empty())
         throw std::runtime_error("--exclude-sce-module conflicts with --skip-sce-module");
 
+    if (args.toWindows && args.toMacOs)
+        throw std::runtime_error("--windows and --macos cannot be used together");
+
     if (args.windowsDiagnostics && !args.toWindows)
         throw std::runtime_error("--windows-diagnostics requires --windows");
 
@@ -69,7 +86,7 @@ Args ParseArgs(int argc, char* argv[]) {
 
     if (args.inputPath.empty() || args.outputPath.empty())
         throw std::runtime_error(
-            "Usage: ryty [--windows] [--windows-diagnostics] [--windows-gui] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>] [--lazy-binding] [--autorun] <input.elf> <output.elf>\n"
+            "Usage: ryty [--windows|--macos] [--ps4|--ps5|--console auto|ps4|ps5] [--windows-diagnostics] [--windows-gui] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>] [--lazy-binding] [--autorun] <input.elf> <output.elf>\n"
             "Example: ryty input.elf output.elf"
         );
 

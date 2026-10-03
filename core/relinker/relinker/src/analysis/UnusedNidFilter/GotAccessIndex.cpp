@@ -43,6 +43,7 @@ std::unique_ptr<IGotAccessIndex> BuildGotAccessIndex(
 ) {
     const Codegen::X64InstructionDecoder decoder;
     std::unordered_set<VirtualAddress> accessed;
+    accessed.reserve(cfg.ReachableVaddrs().size());
 
     for (VirtualAddress va : cfg.ReachableVaddrs()) {
         if (va < textVaddr || va >= textVaddr + static_cast<VirtualAddress>(text.size()))

@@ -27,6 +27,7 @@ std::unique_ptr<IControlFlowGraph> BuildControlFlowGraph(
 ) {
     const Codegen::X64InstructionDecoder decoder;
     std::unordered_set<VirtualAddress> reachable;
+    reachable.reserve(text.size() / 4 + extraEntries.size() + 16);
     std::queue<VirtualAddress> worklist;
 
     auto enqueue = [&](VirtualAddress va) {

@@ -23,3 +23,15 @@ set_target_properties(ryty-gui PROPERTIES
 if(MINGW)
     target_link_options(ryty-gui PRIVATE -mwindows)
 endif()
+
+if(Qt6_FOUND)
+    if(WIN32 OR MINGW)
+        find_program(WINDEPLOYQT_EXECUTABLE NAMES windeployqt6 windeployqt HINTS ${Qt6_DIR}/../../../bin)
+        if(WINDEPLOYQT_EXECUTABLE)
+            add_custom_command(TARGET ryty-gui POST_BUILD
+                COMMAND ${WINDEPLOYQT_EXECUTABLE} --release --no-translations "$<TARGET_FILE:ryty-gui>"
+                COMMENT "Deploying Qt6 runtime libraries for Windows GUI..."
+            )
+        endif()
+    endif()
+endif()

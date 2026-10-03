@@ -55,19 +55,27 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     _targetSystem = new QComboBox;
     _targetSystem->addItem("Linux (native ELF)");
     _targetSystem->addItem("Windows (PE)");
+    _targetSystem->addItem("macOS (Mach-O / Metal, experimental)");
     optionsGrid->addWidget(_targetSystem, 0, 1);
 
-    optionsGrid->addWidget(new QLabel("Unused NID filter:"), 0, 2);
+    optionsGrid->addWidget(new QLabel("Console platform:"), 0, 2);
+    _consolePlatform = new QComboBox;
+    _consolePlatform->addItem("Auto-detect");
+    _consolePlatform->addItem("PlayStation 5");
+    _consolePlatform->addItem("PlayStation 4");
+    optionsGrid->addWidget(_consolePlatform, 0, 3);
+
+    optionsGrid->addWidget(new QLabel("Unused NID filter:"), 1, 0);
     _unusedFilter = new QComboBox;
     _unusedFilter->addItem("0 - disabled");
     _unusedFilter->addItem("1 - CFG/GOT (resilient)");
     _unusedFilter->addItem("2 - strict reachability");
     _unusedFilter->setCurrentIndex(1);
-    optionsGrid->addWidget(_unusedFilter, 0, 3);
+    optionsGrid->addWidget(_unusedFilter, 1, 1);
 
-    optionsGrid->addWidget(new QLabel("Library rpath:"), 1, 0);
+    optionsGrid->addWidget(new QLabel("Library rpath:"), 1, 2);
     _runPath = new QLineEdit("$ORIGIN/libs");
-    optionsGrid->addWidget(_runPath, 1, 1);
+    optionsGrid->addWidget(_runPath, 1, 3);
 
     auto makeCheck = [this, optionsGrid](const QString& label, bool checked, int row, int column) {
         auto* box = new QCheckBox(label);
@@ -76,12 +84,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         return box;
     };
 
-    _toIntel = makeCheck("Lower AMD-only instructions", true, 1, 2);
-    _skipSceModule = makeCheck("Skip sce_module", false, 1, 3);
-    _skipSyscallCheck = makeCheck("Skip syscall check", false, 2, 0);
-    _lazyBinding = makeCheck("Lazy PLT binding", false, 2, 1);
-    _registry = makeCheck("Write call registry JSON", false, 2, 2);
-    _autorun = makeCheck("Launch after porting", false, 2, 3);
+    _toIntel = makeCheck("Lower AMD-only instructions", true, 2, 0);
+    _skipSceModule = makeCheck("Skip sce_module", false, 2, 1);
+    _skipSyscallCheck = makeCheck("Skip syscall check", false, 2, 2);
+    _lazyBinding = makeCheck("Lazy PLT binding", false, 2, 3);
+    _registry = makeCheck("Write call registry JSON", false, 3, 0);
+    _autorun = makeCheck("Launch after porting", false, 3, 1);
     layout->addWidget(Group("Porting options", optionsGrid));
 
     auto* logLayout = new QVBoxLayout;
@@ -148,6 +156,9 @@ QString MainWindow::CliPath() const {
 QStringList MainWindow::BuildArguments() const {
     QStringList arguments;
     if (_targetSystem->currentIndex() == 1) arguments << "--windows";
+    else if (_targetSystem->currentIndex() == 2) arguments << "--macos";
+    if (_consolePlatform->currentIndex() == 1) arguments << "--ps5";
+    else if (_consolePlatform->currentIndex() == 2) arguments << "--ps4";
     if (_toIntel->isChecked()) arguments << "--to-intel";
     if (_skipSceModule->isChecked()) arguments << "--skip-sce-module";
     if (_skipSyscallCheck->isChecked()) arguments << "--skip-syscall-check";
