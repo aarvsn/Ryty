@@ -1,0 +1,22 @@
+add_library(libSceNet SHARED EXCLUDE_FROM_ALL Export.cpp)
+target_include_directories(libSceNet PRIVATE ${LIBS_INCLUDE_DIR})
+configure_windows_unwind(libSceNet)
+
+if(MINGW)
+    foreach(runtimeLinkFlag IN ITEMS -static-libgcc -static-libstdc++ -static)
+        string(REPLACE "${runtimeLinkFlag}" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    endforeach()
+endif()
+
+if(BUILD_TESTING)
+    add_test_executable(guest_sce_net_tests ${LIBS_INCLUDE_DIR}/tests/GuestSceNet.cpp)
+    target_include_directories(guest_sce_net_tests PRIVATE ${LIBS_INCLUDE_DIR})
+    target_link_libraries(guest_sce_net_tests PRIVATE libSceNet libSceNetCtl)
+    configure_windows_unwind(guest_sce_net_tests)
+    add_test(NAME guest_sce_net COMMAND guest_sce_net_tests)
+    set_tests_properties(guest_sce_net PROPERTIES TIMEOUT 20)
+    if(WIN32)
+        set_tests_properties(guest_sce_net PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libSceNet>")
+    endif()
+endif()

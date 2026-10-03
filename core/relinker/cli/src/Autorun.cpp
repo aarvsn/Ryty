@@ -1,0 +1,36 @@
+#include <Cli.hpp>
+#include <filesystem>
+#include <iostream>
+#include <limits>
+#include <string>
+#include <cstdlib>
+
+namespace Cli {
+
+int Autorun(const std::string& absPath, bool toWindows) {
+    if (!toWindows) {
+        std::filesystem::permissions(absPath,
+            std::filesystem::perms::owner_exec |
+            std::filesystem::perms::group_exec |
+            std::filesystem::perms::others_exec,
+            std::filesystem::perm_options::add);
+    }
+
+    const std::string cmd = "\"" + absPath + "\"";
+    const int rawCode = std::system(cmd.c_str());
+
+    int exitCode = rawCode;
+    if (toWindows) {
+        std::cout << "\nExit code: " << rawCode << '\n';
+    } else {
+        if (rawCode != -1) exitCode = (rawCode >> 8) & 0xFF;
+        std::cout << "\nRaw exit code: " << rawCode << "; Unpacked: " << exitCode << '\n';
+    }
+
+    std::cout << "\nPress Enter to exit...\n";
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+    return exitCode;
+}
+
+}

@@ -1,0 +1,52 @@
+# Build outputs
+build/
+build-*/
+out/
+*.o
+*.obj
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.a
+*.lib
+*.pdb
+*.exp
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CMakeUserPresets.json
+compile_commands.json
+.cmake/
+
+# Test and tooling artifacts
+Testing/
+CTestTestfile.cmake.tmp
+tests/
+*.spv
+*.registry.json
+port-report*.json
+
+# Qt
+moc_*.cpp
+qrc_*.cpp
+*.moc
+ui_*.h
+.qtc_clangd/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
