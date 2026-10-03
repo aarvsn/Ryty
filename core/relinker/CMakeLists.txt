@@ -76,7 +76,7 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(relinker_tests
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/RelinkerTests.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/RelinkerTests.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/cli/src/CliArgs.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/cli/src/Autorun.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/elfpatcher/src/linux/LinuxElfPatcher.cpp
