@@ -268,6 +268,64 @@ jobs:
           files: Ryty-*-windows-x86_64.zip
           generate_release_notes: true
 
+  # ---------------------------------------------------------------- macOS ---
+  macos:
+    name: macOS (CLI + Metal)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install ninja
+
+      - name: Determine version string
+        id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="${GITHUB_SHA:0:7}"
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Configure
+        run: |
+          cmake -B build/macos -G Ninja -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/macos --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build/macos --output-on-failure --parallel 2
+
+      - name: Assemble macOS package
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          STAGE="Ryty-$VER-macos"
+          mkdir -p "$STAGE"
+          CLI_EXE="$(find build/macos -type f -name ryty | head -n1)"
+          cp "$CLI_EXE" "$STAGE/ryty"
+          cp ci/README.txt "$STAGE/README.txt"
+          zip -r "Ryty-$VER-macos.zip" "$STAGE"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ryty-macos
+          path: Ryty-*-macos.zip
+          if-no-files-found: error
+
+      - name: Publish release (v* tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Ryty-*-macos.zip
+          generate_release_notes: true
+
   # ------------------------------------------------- Linux CLI-only check ---
   linux-cli:
     name: Linux CLI-only (no Qt, graceful GUI skip)

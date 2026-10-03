@@ -164,6 +164,14 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
 
     for (auto& [fst, snd] : neededLibraryNamesByStrOffset) {
         snd = readCStr(fst);
+        if (_consoleTarget == "ps4") {
+            // PS4 library normalization: map PS4 kernel & SPRX dependencies to host PRX modules
+            if (snd == "libkernel.sprx" || snd == "libkernel.prx") {
+                snd = "libkernel.prx";
+            } else if (snd.size() > 5 && snd.rfind(".sprx") == snd.size() - 5) {
+                snd = snd.substr(0, snd.size() - 5) + ".prx";
+            }
+        }
         neededLibraries.push_back(snd);
         if (policy) policy->RegisterLibraryImport(snd);
     }

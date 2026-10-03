@@ -33,5 +33,10 @@ if(Qt6_FOUND)
                 COMMENT "Deploying Qt6 runtime libraries for Windows GUI..."
             )
         endif()
+    elseif(UNIX AND NOT APPLE)
+        add_custom_command(TARGET ryty-gui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ryty-gui>/plugins/platforms"
+            COMMENT "Deploying Qt6 runtime deployment layout for Linux GUI..."
+        )
     endif()
 endif()
