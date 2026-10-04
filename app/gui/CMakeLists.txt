@@ -29,7 +29,7 @@ if(Qt6_FOUND)
         find_program(WINDEPLOYQT_EXECUTABLE NAMES windeployqt6 windeployqt HINTS ${Qt6_DIR}/../../../bin)
         if(WINDEPLOYQT_EXECUTABLE)
             add_custom_command(TARGET ryty-gui POST_BUILD
-                COMMAND ${WINDEPLOYQT_EXECUTABLE} --release --no-translations "$<TARGET_FILE:ryty-gui>"
+                COMMAND ${WINDEPLOYQT_EXECUTABLE} --release --no-translations --dir "$<TARGET_FILE_DIR:ryty-gui>" --compiler-runtime "$<TARGET_FILE:ryty-gui>"
                 COMMENT "Deploying Qt6 runtime libraries for Windows GUI..."
             )
         endif()

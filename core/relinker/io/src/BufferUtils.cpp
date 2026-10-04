@@ -55,6 +55,7 @@ void AppendI64(std::vector<std::uint8_t>& buf, std::int64_t v) {
 }
 
 void AppendString(std::vector<std::uint8_t>& buf, const std::string& str) {
+    buf.reserve(buf.size() + str.size() + 1);
     buf.insert(buf.end(), str.begin(), str.end());
     buf.push_back(0);
 }

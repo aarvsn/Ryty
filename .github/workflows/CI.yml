@@ -236,7 +236,7 @@ jobs:
 
           WINDEPLOY="$(command -v windeployqt6 || command -v windeployqt)"
           echo "Using $WINDEPLOY"
-          "$WINDEPLOY" --release --no-translations "$STAGE/ryty-gui.exe"
+          "$WINDEPLOY" --release --no-translations --dir "$STAGE" --compiler-runtime "$STAGE/ryty-gui.exe"
 
           # Defensive: make sure the MinGW runtime DLLs are present even if
           # windeployqt skipped them.

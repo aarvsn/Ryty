@@ -31,6 +31,7 @@ public:
             [mtkView setClearColor:MTLClearColorMake(0.1, 0.1, 0.15, 1.0)];
 
             RytyMetalRenderer* renderer = [[RytyMetalRenderer alloc] initWithMetalKitView:mtkView];
+            [renderer setupDefaultPipeline];
             [mtkView setDelegate:renderer];
 
             [window setContentView:mtkView];
@@ -47,4 +48,8 @@ public:
 extern "C" void RytyMetalViewHostCreate(int w, int h, const char* title) {
     Ryty::MacOs::MetalViewHost host;
     host.InitializeWindow(w, h, title);
+}
+
+extern "C" void RytyMetalViewHostSetClearColor(double r, double g, double b, double a) {
+    RytyMetalSetClearColor(r, g, b, a);
 }

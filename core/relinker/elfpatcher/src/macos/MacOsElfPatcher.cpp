@@ -5,9 +5,21 @@
 
 #if defined(__APPLE__)
 extern "C" void RytyMetalInitializeDevice(void);
+extern "C" int RytyMetalIsSupported(void);
+extern "C" const char* RytyMetalGetDeviceName(void);
+extern "C" void RytyMetalSetClearColor(double r, double g, double b, double a);
 #else
 extern "C" void RytyMetalInitializeDevice(void) {
     // Metal API context stub for non-Apple build environments
+}
+extern "C" int RytyMetalIsSupported(void) {
+    return 1;
+}
+extern "C" const char* RytyMetalGetDeviceName(void) {
+    return "Metal Default Device";
+}
+extern "C" void RytyMetalSetClearColor(double r, double g, double b, double a) {
+    (void)r; (void)g; (void)b; (void)a;
 }
 #endif
 
@@ -21,7 +33,10 @@ constexpr std::uint32_t CPU_SUBTYPE_ALL = 0x00000003;
 constexpr std::uint32_t MH_EXECUTE = 0x00000002;
 
 constexpr std::uint32_t LC_SEGMENT_64 = 0x19;
+constexpr std::uint32_t LC_LOAD_DYLIB = 0x0c;
+constexpr std::uint32_t LC_LOAD_DYLINKER = 0x0e;
 constexpr std::uint32_t LC_MAIN = 0x80000028;
+constexpr std::uint32_t LC_RPATH = 0x8000001c;
 
 struct MachOHeader64 {
     std::uint32_t Magic;
@@ -55,6 +70,48 @@ struct MainCommand {
     std::uint64_t StackSize;
 };
 
+struct DylibCommand {
+    std::uint32_t Cmd;
+    std::uint32_t CmdSize;
+    std::uint32_t NameOffset;
+    std::uint32_t Timestamp;
+    std::uint32_t CurrentVersion;
+    std::uint32_t CompatibilityVersion;
+};
+
+struct RpathCommand {
+    std::uint32_t Cmd;
+    std::uint32_t CmdSize;
+    std::uint32_t PathOffset;
+};
+
+std::vector<std::uint8_t> makeDylibCommand(const std::string& path) {
+    const std::size_t rawSize = sizeof(DylibCommand) + path.size() + 1;
+    const std::size_t alignedSize = (rawSize + 7) & ~std::size_t(7);
+    std::vector<std::uint8_t> buf(alignedSize, 0);
+    auto* cmd = reinterpret_cast<DylibCommand*>(buf.data());
+    cmd->Cmd = LC_LOAD_DYLIB;
+    cmd->CmdSize = static_cast<std::uint32_t>(alignedSize);
+    cmd->NameOffset = sizeof(DylibCommand);
+    cmd->Timestamp = 2;
+    cmd->CurrentVersion = 0x00010000;
+    cmd->CompatibilityVersion = 0x00010000;
+    std::memcpy(buf.data() + sizeof(DylibCommand), path.data(), path.size());
+    return buf;
+}
+
+std::vector<std::uint8_t> makeRpathCommand(const std::string& path) {
+    const std::size_t rawSize = sizeof(RpathCommand) + path.size() + 1;
+    const std::size_t alignedSize = (rawSize + 7) & ~std::size_t(7);
+    std::vector<std::uint8_t> buf(alignedSize, 0);
+    auto* cmd = reinterpret_cast<RpathCommand*>(buf.data());
+    cmd->Cmd = LC_RPATH;
+    cmd->CmdSize = static_cast<std::uint32_t>(alignedSize);
+    cmd->PathOffset = sizeof(RpathCommand);
+    std::memcpy(buf.data() + sizeof(RpathCommand), path.data(), path.size());
+    return buf;
+}
+
 }
 
 MacOsElfPatcher::MacOsElfPatcher() = default;
@@ -74,17 +131,37 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     // Invoke Metal device initialization symbol to link and initialize Metal API context
     RytyMetalInitializeDevice();
 
-    std::vector<std::uint8_t> result;
+    const auto metalLibCmd = makeDylibCommand("/System/Library/Frameworks/Metal.framework/Versions/A/Metal");
+    const auto metalKitLibCmd = makeDylibCommand("/System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit");
+    const auto cocoaLibCmd = makeDylibCommand("/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa");
+    const auto libSystemCmd = makeDylibCommand("/usr/lib/libSystem.B.dylib");
+
+    std::string rpath = runPath.empty() ? "@executable_path/libs" : runPath;
+    const auto rpathCmd = makeRpathCommand(rpath);
+
+    const std::uint32_t cmdsCount = 8;
+    const std::uint32_t cmdsSize = static_cast<std::uint32_t>(
+        sizeof(SegmentCommand64) * 2 +
+        sizeof(MainCommand) +
+        metalLibCmd.size() +
+        metalKitLibCmd.size() +
+        cocoaLibCmd.size() +
+        libSystemCmd.size() +
+        rpathCmd.size()
+    );
 
     MachOHeader64 header{};
     header.Magic = MH_MAGIC_64;
     header.CpuType = CPU_TYPE_X86_64;
     header.CpuSubtype = CPU_SUBTYPE_ALL;
     header.FileType = MH_EXECUTE;
-    header.CmdsCount = 3;
-    header.CmdsSize = sizeof(SegmentCommand64) * 2 + sizeof(MainCommand);
+    header.CmdsCount = cmdsCount;
+    header.CmdsSize = cmdsSize;
     header.Flags = 0x00200085; // MH_NOUNDEFS | MH_DYLDLINK | MH_PIE
     header.Reserved = 0;
+
+    std::vector<std::uint8_t> result;
+    result.reserve(sizeof(header) + cmdsSize + 16 + sourceElf.size());
 
     const auto appendBytes = [&](const void* ptr, std::size_t size) {
         const auto* bytePtr = static_cast<const std::uint8_t*>(ptr);
@@ -137,6 +214,12 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     mainCmd.EntryOffset = entryStubOffset; // Points to valid entry stub instructions
     mainCmd.StackSize = 0;
     appendBytes(&mainCmd, sizeof(mainCmd));
+
+    appendBytes(metalLibCmd.data(), metalLibCmd.size());
+    appendBytes(metalKitLibCmd.data(), metalKitLibCmd.size());
+    appendBytes(cocoaLibCmd.data(), cocoaLibCmd.size());
+    appendBytes(libSystemCmd.data(), libSystemCmd.size());
+    appendBytes(rpathCmd.data(), rpathCmd.size());
 
     // Append entry stub
     result.insert(result.end(), entryStub.begin(), entryStub.end());
