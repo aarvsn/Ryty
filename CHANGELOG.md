@@ -4,6 +4,18 @@ All notable changes to Ryty are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-10-04
+
+### Added
+- **Enhanced macOS & Metal Porting**: Expanded Mach-O bundle structure generation (`LC_LOAD_DYLIB`, `LC_RPATH`) in `MacOsElfPatcher` and enhanced Metal graphics bridge (`RytyMetalRenderer`, `RytyMetalView`) with pipeline state setup, render pass encoder configuration, viewport management, and device queries.
+- **Porting Pipeline Enhancements**: Improved JSON report metadata, expanded CLI arguments, and improved guest module relocation handling.
+
+### Fixed
+- **Windows Qt6 Missing Files**: Fixed issue where Windows builds missed required Qt6 platform plugins (e.g. `platforms/qwindows.dll`) and deployment DLLs by passing target directory and deployment parameters to `windeployqt6` / `windeployqt` in CMake and CI workflow.
+
+### Optimized
+- **Buffer & Memory Allocation**: Fast-path vector reservation and capacity pre-allocations across I/O writers, ELF patchers, dependency stub builders, and instruction scanning routines.
+
 ## [1.0.1] - 2026-10-03
 
 ### Added

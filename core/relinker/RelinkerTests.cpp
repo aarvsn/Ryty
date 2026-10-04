@@ -4,6 +4,13 @@
 #include <relinker/parsing/ElfReader.hpp>
 #include <elfpatcher/macos/MacOsElfPatcher.hpp>
 #include <codegen/IInstructionScanner.hpp>
+
+extern "C" {
+void RytyMetalInitializeDevice(void);
+int RytyMetalIsSupported(void);
+const char* RytyMetalGetDeviceName(void);
+void RytyMetalSetClearColor(double r, double g, double b, double a);
+}
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -62,6 +69,13 @@ void TestMacOsPatcher() {
     assert(patched.size() > dummyElf.size());
     // Mach-O MH_MAGIC_64 is 0xfeedfacf (0xcf, 0xfa, 0xed, 0xfe in little endian)
     assert(patched[0] == 0xcf && patched[1] == 0xfa && patched[2] == 0xed && patched[3] == 0xfe);
+
+    // Verify Metal bridge initialization functions
+    RytyMetalInitializeDevice();
+    assert(RytyMetalIsSupported() != 0);
+    assert(RytyMetalGetDeviceName() != nullptr);
+    RytyMetalSetClearColor(0.2, 0.2, 0.2, 1.0);
+
     std::cout << "  -> PASSED!\n";
 }
 

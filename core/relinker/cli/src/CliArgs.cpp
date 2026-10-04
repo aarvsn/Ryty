@@ -41,6 +41,14 @@ Args ParseArgs(int argc, char* argv[]) {
             args.toWindows = true;
         } else if (arg == "--macos") {
             args.toMacOs = true;
+        } else if (arg == "--target") {
+            if (i + 1 >= argc)
+                throw std::runtime_error("--target requires a system name (linux, windows, macos)");
+            const std::string target = argv[++i];
+            if (target == "windows" || target == "WINDOWS") args.toWindows = true;
+            else if (target == "macos" || target == "MACOS" || target == "macOS") args.toMacOs = true;
+            else if (target == "linux" || target == "LINUX") { args.toWindows = false; args.toMacOs = false; }
+            else throw std::runtime_error("unknown target system: " + target);
         } else if (arg == "--ps4") {
             args.consoleMode = ConsoleMode::PS4;
         } else if (arg == "--ps5") {
