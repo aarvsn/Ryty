@@ -4,6 +4,18 @@ All notable changes to Ryty are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-10-05
+
+### Fixed
+- **macOS Mach-O Patcher**: Fixed entry stub generation to properly jump to guest entry point, restored Intel instruction lowering (`--to-intel`) trampoline stub emission for macOS binaries, and added missing `QuartzCore.framework` dylib loading command.
+- **macOS Guest Module Resolution**: Extended `GuestModuleBuilder` to support `@executable_path` and `@loader_path` rpath prefixes on macOS targets.
+
+### Enhanced
+- **macOS Metal Graphics Bridge**: Added pipeline depth/stencil state setup (`MTLPixelFormatDepth32Float`), depth texture allocation support, alpha blending pipeline configuration (`MTLBlendFactorSourceAlpha`), view host configuration functions, and C API extensions (`RytyMetalSetDepthStencilEnabled`).
+
+### Optimized
+- **Relinker & IO Memory Allocation**: Pre-allocated container capacities and optimized vector reservations in `MacOsElfPatcher`, `RelinkerPipeline`, `GuestModuleBuilder`, and `ByteWriter` routines.
+
 ## [1.0.2] - 2026-10-04
 
 ### Added

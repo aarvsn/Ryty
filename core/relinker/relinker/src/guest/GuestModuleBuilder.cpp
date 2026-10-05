@@ -139,7 +139,10 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
     if (!windows) {
         if (guestRunPath == "$ORIGIN") guestRunPath = "$ORIGIN/../..";
         else if (guestRunPath.starts_with("$ORIGIN/")) guestRunPath.insert(8, "../../");
-        else if (!std::filesystem::path(guestRunPath).is_absolute()) throw Domain::RelinkerException("Guest Linux run path must be absolute or begin with $ORIGIN");
+        else if (guestRunPath == "@executable_path") guestRunPath = "@executable_path/../..";
+        else if (guestRunPath.starts_with("@executable_path/")) guestRunPath.insert(17, "../../");
+        else if (guestRunPath.starts_with("@loader_path/")) guestRunPath.insert(13, "../../");
+        else if (!std::filesystem::path(guestRunPath).is_absolute()) throw Domain::RelinkerException("Guest Linux/macOS run path must be absolute or begin with $ORIGIN, @executable_path, or @loader_path");
     }
     std::vector<GuestArtifact> artifacts;
     const auto destination = std::filesystem::absolute(outputPath).parent_path() / relativeDirectory;

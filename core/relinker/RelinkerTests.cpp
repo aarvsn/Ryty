@@ -10,6 +10,7 @@ void RytyMetalInitializeDevice(void);
 int RytyMetalIsSupported(void);
 const char* RytyMetalGetDeviceName(void);
 void RytyMetalSetClearColor(double r, double g, double b, double a);
+void RytyMetalSetDepthStencilEnabled(int enabled);
 }
 #include <cassert>
 #include <cstring>
@@ -63,9 +64,22 @@ void TestPs4Detection() {
 void TestMacOsPatcher() {
     std::cout << "[Test] Running TestMacOsPatcher...\n";
     std::vector<std::uint8_t> dummyElf(256, 0x90);
+    // Minimal ELF header magic
+    dummyElf[0] = 0x7f; dummyElf[1] = 'E'; dummyElf[2] = 'L'; dummyElf[3] = 'F';
+
+    std::vector<Codegen::TrampolineSite> trampolines;
+    trampolines.push_back({
+        32, // Offset
+        0x100000020ull, // Address
+        5, // Length
+        {0x0f, 0x38, 0xc8, 0x01, 0x00}, // Original bytes
+        {0x48, 0x31, 0xc0, 0xe9, 0x00, 0x00, 0x00, 0x00}, // Body
+        3 // Return branch offset
+    });
+
     Elfpatcher::MacOs::MacOsElfPatcher patcher;
     Domain::SysVDynamicSection dyn;
-    auto patched = patcher.Patch(dummyElf, {}, dyn, 0, "$ORIGIN/libs", false, false, {});
+    auto patched = patcher.Patch(dummyElf, {}, dyn, 0, "@executable_path/libs", false, false, trampolines);
     assert(patched.size() > dummyElf.size());
     // Mach-O MH_MAGIC_64 is 0xfeedfacf (0xcf, 0xfa, 0xed, 0xfe in little endian)
     assert(patched[0] == 0xcf && patched[1] == 0xfa && patched[2] == 0xed && patched[3] == 0xfe);
@@ -75,6 +89,7 @@ void TestMacOsPatcher() {
     assert(RytyMetalIsSupported() != 0);
     assert(RytyMetalGetDeviceName() != nullptr);
     RytyMetalSetClearColor(0.2, 0.2, 0.2, 1.0);
+    RytyMetalSetDepthStencilEnabled(1);
 
     std::cout << "  -> PASSED!\n";
 }

@@ -8,6 +8,7 @@ extern "C" void RytyMetalInitializeDevice(void);
 extern "C" int RytyMetalIsSupported(void);
 extern "C" const char* RytyMetalGetDeviceName(void);
 extern "C" void RytyMetalSetClearColor(double r, double g, double b, double a);
+extern "C" void RytyMetalSetDepthStencilEnabled(int enabled);
 #else
 extern "C" void RytyMetalInitializeDevice(void) {
     // Metal API context stub for non-Apple build environments
@@ -20,6 +21,9 @@ extern "C" const char* RytyMetalGetDeviceName(void) {
 }
 extern "C" void RytyMetalSetClearColor(double r, double g, double b, double a) {
     (void)r; (void)g; (void)b; (void)a;
+}
+extern "C" void RytyMetalSetDepthStencilEnabled(int enabled) {
+    (void)enabled;
 }
 #endif
 
@@ -134,18 +138,20 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     const auto metalLibCmd = makeDylibCommand("/System/Library/Frameworks/Metal.framework/Versions/A/Metal");
     const auto metalKitLibCmd = makeDylibCommand("/System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit");
     const auto cocoaLibCmd = makeDylibCommand("/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa");
+    const auto quartzCoreLibCmd = makeDylibCommand("/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore");
     const auto libSystemCmd = makeDylibCommand("/usr/lib/libSystem.B.dylib");
 
     std::string rpath = runPath.empty() ? "@executable_path/libs" : runPath;
     const auto rpathCmd = makeRpathCommand(rpath);
 
-    const std::uint32_t cmdsCount = 8;
+    const std::uint32_t cmdsCount = 9;
     const std::uint32_t cmdsSize = static_cast<std::uint32_t>(
         sizeof(SegmentCommand64) * 2 +
         sizeof(MainCommand) +
         metalLibCmd.size() +
         metalKitLibCmd.size() +
         cocoaLibCmd.size() +
+        quartzCoreLibCmd.size() +
         libSystemCmd.size() +
         rpathCmd.size()
     );
@@ -186,15 +192,45 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     // Calculate header layout and entry stub position
     const std::uint64_t headerAndCmdsSize = sizeof(MachOHeader64) + header.CmdsSize;
 
-    // Entry stub code: x86_64 assembly stub (xor rax, rax; ret)
-    std::vector<std::uint8_t> entryStub = {
-        0x48, 0x31, 0xc0, // xor rax, rax
-        0xc3             // ret
-    };
+    // Read ELF entry point if present
+    std::uint64_t realEntryVaddr = 0;
+    if (sourceElf.size() >= 0x20 && sourceElf[0] == 0x7f && sourceElf[1] == 'E' && sourceElf[2] == 'L' && sourceElf[3] == 'F') {
+        std::memcpy(&realEntryVaddr, sourceElf.data() + 0x18, 8);
+    }
 
     const std::uint64_t entryStubOffset = headerAndCmdsSize;
-    const std::uint64_t payloadOffset = entryStubOffset + entryStub.size();
-    const std::uint64_t textSize = entryStub.size() + sourceElf.size();
+    constexpr std::size_t entryStubSize = 16;
+    const std::uint64_t payloadOffset = entryStubOffset + entryStubSize;
+
+    // Entry stub code: x86_64 assembly stub setting up stack frame and jumping to payload entry
+    std::vector<std::uint8_t> entryStub(entryStubSize, 0x90); // NOP fill
+    entryStub[0] = 0x48; entryStub[1] = 0x31; entryStub[2] = 0xc0; // xor rax, rax
+    entryStub[3] = 0x48; entryStub[4] = 0x89; entryStub[5] = 0xe5; // mov rbp, rsp
+    entryStub[6] = 0xe9; // jmp rel32
+
+    std::uint64_t targetEntryVaddr = 0x100000000ull + payloadOffset;
+    if (realEntryVaddr != 0) {
+        if (realEntryVaddr >= 0x100000000ull) {
+            targetEntryVaddr = realEntryVaddr;
+        } else {
+            targetEntryVaddr = 0x100000000ull + payloadOffset + realEntryVaddr;
+        }
+    }
+
+    const std::uint64_t nextInsnVaddr = 0x100000000ull + entryStubOffset + 11;
+    const auto jmpDisp = static_cast<std::int32_t>(targetEntryVaddr - nextInsnVaddr);
+    std::memcpy(entryStub.data() + 7, &jmpDisp, 4);
+
+    // Prepare payload copy for in-place instruction patching
+    std::vector<std::uint8_t> payload = sourceElf;
+
+    // Calculate total text size including extra trampoline stubs
+    std::size_t trampolineTotalSize = 0;
+    for (const auto& site : trampolines) {
+        trampolineTotalSize += 16 + site.Body.size();
+    }
+
+    const std::uint64_t textSize = entryStubSize + payload.size() + trampolineTotalSize;
 
     SegmentCommand64 textSeg{};
     textSeg.Cmd = LC_SEGMENT_64;
@@ -218,14 +254,49 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     appendBytes(metalLibCmd.data(), metalLibCmd.size());
     appendBytes(metalKitLibCmd.data(), metalKitLibCmd.size());
     appendBytes(cocoaLibCmd.data(), cocoaLibCmd.size());
+    appendBytes(quartzCoreLibCmd.data(), quartzCoreLibCmd.size());
     appendBytes(libSystemCmd.data(), libSystemCmd.size());
     appendBytes(rpathCmd.data(), rpathCmd.size());
 
     // Append entry stub
     result.insert(result.end(), entryStub.begin(), entryStub.end());
 
-    // Append payload
-    result.insert(result.end(), sourceElf.begin(), sourceElf.end());
+    // Process trampolines if present
+    std::vector<std::uint8_t> trampolineBuf;
+    trampolineBuf.reserve(trampolineTotalSize);
+
+    for (const auto& site : trampolines) {
+        if (site.Offset < payload.size() && site.Length <= payload.size() - site.Offset) {
+            while ((result.size() + payload.size() + trampolineBuf.size()) % 16 != 0) {
+                trampolineBuf.push_back(0xcc); // INT 3 padding
+            }
+
+            const std::uint64_t bodyOff = result.size() + payload.size() + trampolineBuf.size();
+            const std::uint64_t bodyVaddr = 0x100000000ull + bodyOff;
+
+            auto body = site.Body;
+            const auto returnDisplacement = static_cast<std::int64_t>(site.Address + site.Length) -
+                static_cast<std::int64_t>(bodyVaddr + site.ReturnBranchOffset + 5);
+            if (site.ReturnBranchOffset + 5 <= body.size()) {
+                const auto disp32 = static_cast<std::int32_t>(returnDisplacement);
+                std::memcpy(body.data() + site.ReturnBranchOffset + 1, &disp32, 4);
+            }
+
+            trampolineBuf.insert(trampolineBuf.end(), body.begin(), body.end());
+
+            // Patch jump in payload
+            const std::uint64_t siteVaddr = 0x100000000ull + payloadOffset + site.Offset;
+            const auto jumpDisplacement = static_cast<std::int32_t>(bodyVaddr - (siteVaddr + 5));
+
+            std::fill_n(payload.begin() + static_cast<std::ptrdiff_t>(site.Offset), site.Length, 0x90); // NOP
+            payload[site.Offset] = 0xe9; // JMP rel32
+            std::memcpy(payload.data() + site.Offset + 1, &jumpDisplacement, 4);
+        }
+    }
+
+    // Append patched payload and trampoline bodies
+    result.insert(result.end(), payload.begin(), payload.end());
+    result.insert(result.end(), trampolineBuf.begin(), trampolineBuf.end());
 
     return result;
 }
