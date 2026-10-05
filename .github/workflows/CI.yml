@@ -238,12 +238,18 @@ jobs:
           echo "Using $WINDEPLOY"
           "$WINDEPLOY" --release --no-translations --dir "$STAGE" --compiler-runtime "$STAGE/ryty-gui.exe"
 
-          # Defensive: make sure the MinGW runtime DLLs are present even if
-          # windeployqt skipped them.
-          for dll in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll zlib1.dll; do
-            if [ ! -f "$STAGE/$dll" ] && [ -f "/ucrt64/bin/$dll" ]; then
-              cp "/ucrt64/bin/$dll" "$STAGE/"
-            fi
+          # Defensive: make sure all dependent MinGW and UCRT64 runtime DLLs are present
+          # even if windeployqt skipped them.
+          for iter in 1 2 3; do
+            for file in "$STAGE"/*.exe "$STAGE"/*.dll "$STAGE"/platforms/*.dll "$STAGE"/styles/*.dll "$STAGE"/imageformats/*.dll; do
+              if [ -f "$file" ]; then
+                ldd "$file" 2>/dev/null | grep -i "/ucrt64/bin/" | awk '{print $3}' | while read -r dllpath; do
+                  if [ -f "$dllpath" ] && [ ! -f "$STAGE/$(basename "$dllpath")" ]; then
+                    cp "$dllpath" "$STAGE/"
+                  fi
+                done
+              fi
+            done
           done
           ls -la "$STAGE"
 
