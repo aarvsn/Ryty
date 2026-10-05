@@ -243,8 +243,8 @@ jobs:
           for iter in 1 2 3; do
             for file in "$STAGE"/*.exe "$STAGE"/*.dll "$STAGE"/platforms/*.dll "$STAGE"/styles/*.dll "$STAGE"/imageformats/*.dll; do
               if [ -f "$file" ]; then
-                ldd "$file" 2>/dev/null | grep -i "/ucrt64/bin/" | awk '{print $3}' | while read -r dllpath; do
-                  if [ -f "$dllpath" ] && [ ! -f "$STAGE/$(basename "$dllpath")" ]; then
+                (ldd "$file" 2>/dev/null | grep -i "/ucrt64/bin/" || true) | awk '{print $3}' | while read -r dllpath; do
+                  if [ -n "$dllpath" ] && [ -f "$dllpath" ] && [ ! -f "$STAGE/$(basename "$dllpath")" ]; then
                     cp "$dllpath" "$STAGE/"
                   fi
                 done
