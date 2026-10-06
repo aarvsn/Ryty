@@ -29,8 +29,6 @@ Ryty is a fork of [AnyPS5](https://github.com/boykopovar/AnyPS5) - see
 * **Hardened parsing** - `DT_STRSZ`-bounded strings, 8-byte GOT slot
   alignment checks, and a resilient level-1 NID filter that keeps every
   reference when CFG analysis cannot run.
-* **Single-file CI** - one `CI.yml` builds, tests and packages both platforms
-  and publishes releases for `v*` tags.
 
 Unsupported or unexpected states strictly throw `std::runtime_error`;
 `what()` is printed to stderr and the process terminates.
