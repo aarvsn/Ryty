@@ -146,7 +146,9 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
             neededLibraryNamesByStrOffset.emplace_back(tag.Value, std::string());
 
     std::vector<NidReference> nidRefs;
+    nidRefs.reserve((dynRelaSize + dynJmpRelSize) / relaEntSize);
     std::vector<std::string> neededLibraries;
+    neededLibraries.reserve(neededLibraryNamesByStrOffset.size());
     auto policy = std::dynamic_pointer_cast<ValidationPolicy>(_validationPolicy);
 
     const std::vector<std::uint8_t>& raw = _elfReader->GetRawBytes();
@@ -155,6 +157,7 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
         if (strOff >= dynStrSize)
             throw RelinkerException("Dynamic string offset lies outside DT_STRSZ", dynStrTabOffset + strOff);
         std::string result;
+        result.reserve(32);
         FileByteOffset pos = dynStrTabOffset + strOff;
         const FileByteOffset strEnd = dynStrTabOffset + dynStrSize;
         while (pos < raw.size() && pos < strEnd && raw[pos] != 0)

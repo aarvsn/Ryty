@@ -53,3 +53,7 @@ extern "C" void RytyMetalViewHostCreate(int w, int h, const char* title) {
 extern "C" void RytyMetalViewHostSetClearColor(double r, double g, double b, double a) {
     RytyMetalSetClearColor(r, g, b, a);
 }
+
+extern "C" void RytyMetalViewHostEnableDepthStencil(int enabled) {
+    RytyMetalSetDepthStencilEnabled(enabled);
+}

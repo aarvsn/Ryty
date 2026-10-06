@@ -3,17 +3,20 @@
 
 static MTLClearColor g_clearColor = {0.1, 0.1, 0.15, 1.0};
 static char g_deviceNameBuffer[256] = "Metal Default Device";
+static int g_depthStencilEnabled = 1;
 
 @implementation RytyMetalRenderer {
     id<MTLDevice> _device;
     id<MTLCommandQueue> _commandQueue;
     id<MTLRenderPipelineState> _pipelineState;
+    id<MTLDepthStencilState> _depthStencilState;
     MTLClearColor _clearColor;
 }
 
 @synthesize device = _device;
 @synthesize commandQueue = _commandQueue;
 @synthesize pipelineState = _pipelineState;
+@synthesize depthStencilState = _depthStencilState;
 
 - (nonnull instancetype)initWithMetalKitView:(nonnull MTKView *)mtkView {
     self = [super init];
@@ -25,10 +28,14 @@ static char g_deviceNameBuffer[256] = "Metal Default Device";
         }
         _clearColor = g_clearColor;
         [mtkView setClearColor:_clearColor];
+        if (g_depthStencilEnabled) {
+            [mtkView setDepthStencilPixelFormat:MTLPixelFormatDepth32Float];
+        }
         if (_device) {
             _commandQueue = [_device newCommandQueue];
             snprintf(g_deviceNameBuffer, sizeof(g_deviceNameBuffer), "%s", [[_device name] UTF8String]);
             printf("[Ryty Metal] Initialized Metal device: %s\n", g_deviceNameBuffer);
+            [self setupDepthStencilState];
         } else {
             printf("[Ryty Metal] Error: Metal is not supported on this device.\n");
         }
@@ -46,6 +53,15 @@ static char g_deviceNameBuffer[256] = "Metal Default Device";
     MTLRenderPipelineDescriptor *pipelineDescriptor = [[MTLRenderPipelineDescriptor alloc] init];
     pipelineDescriptor.label = @"RytyDefaultPipeline";
     pipelineDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    pipelineDescriptor.colorAttachments[0].blendingEnabled = YES;
+    pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+    pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorSourceAlpha;
+    pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+
+    if (g_depthStencilEnabled) {
+        pipelineDescriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+    }
 
     NSError *error = nil;
     _pipelineState = [_device newRenderPipelineStateWithDescriptor:pipelineDescriptor error:&error];
@@ -53,6 +69,15 @@ static char g_deviceNameBuffer[256] = "Metal Default Device";
         printf("[Ryty Metal] Pipeline creation log: %s\n", [[error localizedDescription] UTF8String]);
     }
     return _pipelineState != nil;
+}
+
+- (BOOL)setupDepthStencilState {
+    if (!_device) return NO;
+    MTLDepthStencilDescriptor *dsDesc = [[MTLDepthStencilDescriptor alloc] init];
+    dsDesc.depthCompareFunction = MTLCompareFunctionLessEqual;
+    dsDesc.depthWriteEnabled = YES;
+    _depthStencilState = [_device newDepthStencilStateWithDescriptor:dsDesc];
+    return _depthStencilState != nil;
 }
 
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size {
@@ -74,6 +99,9 @@ static char g_deviceNameBuffer[256] = "Metal Default Device";
 
         if (_pipelineState) {
             [renderEncoder setRenderPipelineState:_pipelineState];
+        }
+        if (_depthStencilState) {
+            [renderEncoder setDepthStencilState:_depthStencilState];
         }
 
         [renderEncoder endEncoding];
@@ -113,4 +141,8 @@ const char* RytyMetalGetDeviceName(void) {
 
 void RytyMetalSetClearColor(double r, double g, double b, double a) {
     g_clearColor = MTLClearColorMake(r, g, b, a);
+}
+
+void RytyMetalSetDepthStencilEnabled(int enabled) {
+    g_depthStencilEnabled = enabled;
 }
