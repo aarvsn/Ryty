@@ -1,5 +1,6 @@
 #import "RytyMetalRenderer.h"
 #import <stdio.h>
+#import <string.h>
 
 static MTLClearColor g_clearColor = {0.1, 0.1, 0.15, 1.0};
 static char g_deviceNameBuffer[256] = "Metal Default Device";
@@ -93,19 +94,19 @@ static int g_depthStencilEnabled = 1;
                                                                                   mipmapped:NO];
     desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
     id<MTLTexture> tex = [_device newTextureWithDescriptor:desc];
-    return (__bridge_retained RytyMetalTextureHandle)tex;
+    return (RytyMetalTextureHandle)tex;
 }
 
 - (void)updateTexture:(RytyMetalTextureHandle _Nonnull)handle bytes:(const void* _Nonnull)bytes bytesPerRow:(NSUInteger)bpr {
     if (!handle) return;
-    id<MTLTexture> tex = (__bridge id<MTLTexture>)handle;
+    id<MTLTexture> tex = (id<MTLTexture>)handle;
     MTLRegion region = MTLRegionMake2D(0, 0, [tex width], [tex height]);
     [tex replaceRegion:region mipmapLevel:0 withBytes:bytes bytesPerRow:bpr];
 }
 
 - (void)destroyTexture:(RytyMetalTextureHandle _Nonnull)handle {
     if (!handle) return;
-    id<MTLTexture> tex = (__bridge_transfer id<MTLTexture>)handle;
+    id<MTLTexture> tex = (id<MTLTexture>)handle;
     (void)tex;
 }
 
@@ -117,20 +118,20 @@ static int g_depthStencilEnabled = 1;
     } else {
         buf = [_device newBufferWithLength:len options:MTLResourceStorageModeShared];
     }
-    return (__bridge_retained RytyMetalBufferHandle)buf;
+    return (RytyMetalBufferHandle)buf;
 }
 
 - (void)updateBuffer:(RytyMetalBufferHandle _Nonnull)handle data:(const void* _Nonnull)data length:(NSUInteger)len offset:(NSUInteger)off {
     if (!handle || !data) return;
-    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)handle;
+    id<MTLBuffer> buf = (id<MTLBuffer>)handle;
     if (off + len <= [buf length]) {
-        std::memcpy((uint8_t*)[buf contents] + off, data, len);
+        memcpy((uint8_t*)[buf contents] + off, data, len);
     }
 }
 
 - (void)destroyBuffer:(RytyMetalBufferHandle _Nonnull)handle {
     if (!handle) return;
-    id<MTLBuffer> buf = (__bridge_transfer id<MTLBuffer>)handle;
+    id<MTLBuffer> buf = (id<MTLBuffer>)handle;
     (void)buf;
 }
 
