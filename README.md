@@ -59,7 +59,7 @@ relative branch range produce an error.
 `ryty-gui` wraps the CLI: pick input/output, choose the target system, set
 the porting options, watch the colored log and optionally emit the JSON
 report. It launches the `ryty` binary from its own directory. Downloads from
-CI ship the GUI with every Qt6 file it needs - see [ci/README.md](ci/README.md).
+CI ship the GUI with every Qt6 file it needs. 
 
 ## Continuous integration
 
