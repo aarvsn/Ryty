@@ -85,6 +85,67 @@ static int g_depthStencilEnabled = 1;
     (void)size;
 }
 
+- (RytyMetalTextureHandle _Nullable)createTextureWidth:(NSUInteger)w height:(NSUInteger)h pixelFormat:(NSUInteger)pf {
+    if (!_device) return NULL;
+    MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:(MTLPixelFormat)pf
+                                                                                      width:w
+                                                                                     height:h
+                                                                                  mipmapped:NO];
+    desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+    id<MTLTexture> tex = [_device newTextureWithDescriptor:desc];
+    return (__bridge_retained RytyMetalTextureHandle)tex;
+}
+
+- (void)updateTexture:(RytyMetalTextureHandle _Nonnull)handle bytes:(const void* _Nonnull)bytes bytesPerRow:(NSUInteger)bpr {
+    if (!handle) return;
+    id<MTLTexture> tex = (__bridge id<MTLTexture>)handle;
+    MTLRegion region = MTLRegionMake2D(0, 0, [tex width], [tex height]);
+    [tex replaceRegion:region mipmapLevel:0 withBytes:bytes bytesPerRow:bpr];
+}
+
+- (void)destroyTexture:(RytyMetalTextureHandle _Nonnull)handle {
+    if (!handle) return;
+    id<MTLTexture> tex = (__bridge_transfer id<MTLTexture>)handle;
+    (void)tex;
+}
+
+- (RytyMetalBufferHandle _Nullable)createBufferData:(const void* _Nullable)data length:(NSUInteger)len {
+    if (!_device || len == 0) return NULL;
+    id<MTLBuffer> buf = nil;
+    if (data) {
+        buf = [_device newBufferWithBytes:data length:len options:MTLResourceStorageModeShared];
+    } else {
+        buf = [_device newBufferWithLength:len options:MTLResourceStorageModeShared];
+    }
+    return (__bridge_retained RytyMetalBufferHandle)buf;
+}
+
+- (void)updateBuffer:(RytyMetalBufferHandle _Nonnull)handle data:(const void* _Nonnull)data length:(NSUInteger)len offset:(NSUInteger)off {
+    if (!handle || !data) return;
+    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)handle;
+    if (off + len <= [buf length]) {
+        std::memcpy((uint8_t*)[buf contents] + off, data, len);
+    }
+}
+
+- (void)destroyBuffer:(RytyMetalBufferHandle _Nonnull)handle {
+    if (!handle) return;
+    id<MTLBuffer> buf = (__bridge_transfer id<MTLBuffer>)handle;
+    (void)buf;
+}
+
+- (void)setViewportX:(double)x y:(double)y width:(double)w height:(double)h znear:(double)zn zfar:(double)zf {
+    (void)x; (void)y; (void)w; (void)h; (void)zn; (void)zf;
+}
+
+- (void)setScissorRectX:(NSUInteger)x y:(NSUInteger)y width:(NSUInteger)w height:(NSUInteger)h {
+    (void)x; (void)y; (void)w; (void)h;
+}
+
+- (void)setBlendMode:(int)blendMode {
+    (void)blendMode;
+}
+
 - (void)drawInMTKView:(nonnull MTKView *)view {
     if (!_commandQueue) return;
 
@@ -113,13 +174,17 @@ static int g_depthStencilEnabled = 1;
 @end
 
 void RytyMetalInitializeDevice(void) {
+#if defined(__APPLE__)
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (device) {
         snprintf(g_deviceNameBuffer, sizeof(g_deviceNameBuffer), "%s", [[device name] UTF8String]);
         printf("[Ryty Metal] Initialized default Metal device: %s\n", g_deviceNameBuffer);
     } else {
-        printf("[Ryty Metal] Metal device initialization stub called.\n");
+        printf("[Ryty Metal] Metal device initialization failed.\n");
     }
+#else
+    printf("[Ryty Metal] Metal device initialization stub called.\n");
+#endif
 }
 
 void RytyMetalRenderFrame(void) {
@@ -145,4 +210,61 @@ void RytyMetalSetClearColor(double r, double g, double b, double a) {
 
 void RytyMetalSetDepthStencilEnabled(int enabled) {
     g_depthStencilEnabled = enabled;
+}
+
+RytyMetalTextureHandle RytyMetalCreateTexture2D(int width, int height, int pixelFormat) {
+    (void)width; (void)height; (void)pixelFormat;
+    static int dummyTexture = 1;
+    return (RytyMetalTextureHandle)&dummyTexture;
+}
+
+void RytyMetalUpdateTexture2D(RytyMetalTextureHandle handle, const void* bytes, int bytesPerRow) {
+    (void)handle; (void)bytes; (void)bytesPerRow;
+}
+
+void RytyMetalDestroyTexture2D(RytyMetalTextureHandle handle) {
+    (void)handle;
+}
+
+RytyMetalBufferHandle RytyMetalCreateBuffer(const void* data, unsigned long length) {
+    (void)data; (void)length;
+    static int dummyBuffer = 1;
+    return (RytyMetalBufferHandle)&dummyBuffer;
+}
+
+void RytyMetalUpdateBuffer(RytyMetalBufferHandle handle, const void* data, unsigned long length, unsigned long offset) {
+    (void)handle; (void)data; (void)length; (void)offset;
+}
+
+void RytyMetalDestroyBuffer(RytyMetalBufferHandle handle) {
+    (void)handle;
+}
+
+void RytyMetalSetViewport(double x, double y, double width, double height, double znear, double zfar) {
+    (void)x; (void)y; (void)width; (void)height; (void)znear; (void)zfar;
+}
+
+void RytyMetalSetScissorRect(unsigned int x, unsigned int y, unsigned int width, unsigned int height) {
+    (void)x; (void)y; (void)width; (void)height;
+}
+
+void RytyMetalSetBlendMode(int blendMode) {
+    (void)blendMode;
+}
+
+void RytyMetalDrawPrimitives(int primitiveType, unsigned int start, unsigned int count) {
+    (void)primitiveType; (void)start; (void)count;
+}
+
+void RytyMetalDrawIndexedPrimitives(int primitiveType, unsigned int indexCount, int indexType, RytyMetalBufferHandle indexBuffer, unsigned int indexBufferOffset) {
+    (void)primitiveType; (void)indexCount; (void)indexType; (void)indexBuffer; (void)indexBufferOffset;
+}
+
+unsigned long RytyMetalGetMaxThreadsPerThreadgroup(void) {
+    return 1024;
+}
+
+int RytyMetalSupportsFeatureSet(int featureSet) {
+    (void)featureSet;
+    return 1;
 }

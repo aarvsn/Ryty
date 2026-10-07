@@ -4,6 +4,13 @@ All notable changes to Ryty are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-06
+
+### Enhanced
+- **macOS Mach-O Patcher**: Expanded Mach-O generator (`MacOsElfPatcher`) with `LC_BUILD_VERSION` (target macOS platform 1, SDK 14.0, min OS 11.0), `LC_LOAD_DYLINKER` (`/usr/lib/dyld`), multi-segment mapping (`__TEXT` and `__DATA`), and ad-hoc code signature generation (`LC_CODE_SIGNATURE` with `CS_SuperBlob` and `CSMAGIC_CODEDIRECTORY`) for modern macOS and Apple Silicon / Rosetta dyld compliance.
+- **macOS Metal Graphics Bridge & View Host**: Added Metal 2D texture creation and data streaming (`RytyMetalCreateTexture2D`, `RytyMetalUpdateTexture2D`, `RytyMetalDestroyTexture2D`), buffer management (`RytyMetalCreateBuffer`, `RytyMetalUpdateBuffer`, `RytyMetalDestroyBuffer`), viewport (`RytyMetalSetViewport`), scissor rectangle (`RytyMetalSetScissorRect`), blend mode options (`RytyMetalSetBlendMode`), primitive draw calls (`RytyMetalDrawPrimitives`, `RytyMetalDrawIndexedPrimitives`), and threadgroup capability queries (`RytyMetalGetMaxThreadsPerThreadgroup`).
+- **macOS Metal Host C++ API**: Extended `Ryty::MacOs::MetalViewHost` with helper methods and C API wrappers for texture allocation, data uploads, and viewport configuration.
+
 ## [1.0.3] - 2026-10-05
 
 ### Fixed
