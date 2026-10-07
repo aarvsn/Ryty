@@ -57,3 +57,15 @@ extern "C" void RytyMetalViewHostSetClearColor(double r, double g, double b, dou
 extern "C" void RytyMetalViewHostEnableDepthStencil(int enabled) {
     RytyMetalSetDepthStencilEnabled(enabled);
 }
+
+extern "C" RytyMetalTextureHandle RytyMetalViewHostCreateTexture(int w, int h, int format) {
+    return RytyMetalCreateTexture2D(w, h, format);
+}
+
+extern "C" void RytyMetalViewHostUpdateTexture(RytyMetalTextureHandle handle, const void* bytes, int bytesPerRow) {
+    RytyMetalUpdateTexture2D(handle, bytes, bytesPerRow);
+}
+
+extern "C" void RytyMetalViewHostSetViewport(double x, double y, double w, double h) {
+    RytyMetalSetViewport(x, y, w, h, 0.0, 1.0);
+}

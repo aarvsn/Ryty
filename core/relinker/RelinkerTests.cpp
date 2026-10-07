@@ -11,6 +11,19 @@ int RytyMetalIsSupported(void);
 const char* RytyMetalGetDeviceName(void);
 void RytyMetalSetClearColor(double r, double g, double b, double a);
 void RytyMetalSetDepthStencilEnabled(int enabled);
+void* RytyMetalCreateTexture2D(int width, int height, int pixelFormat);
+void RytyMetalUpdateTexture2D(void* handle, const void* bytes, int bytesPerRow);
+void RytyMetalDestroyTexture2D(void* handle);
+void* RytyMetalCreateBuffer(const void* data, unsigned long length);
+void RytyMetalUpdateBuffer(void* handle, const void* data, unsigned long length, unsigned long offset);
+void RytyMetalDestroyBuffer(void* handle);
+void RytyMetalSetViewport(double x, double y, double width, double height, double znear, double zfar);
+void RytyMetalSetScissorRect(unsigned int x, unsigned int y, unsigned int width, unsigned int height);
+void RytyMetalSetBlendMode(int blendMode);
+void RytyMetalDrawPrimitives(int primitiveType, unsigned int start, unsigned int count);
+void RytyMetalDrawIndexedPrimitives(int primitiveType, unsigned int indexCount, int indexType, void* indexBuffer, unsigned int indexBufferOffset);
+unsigned long RytyMetalGetMaxThreadsPerThreadgroup(void);
+int RytyMetalSupportsFeatureSet(int featureSet);
 }
 #include <cassert>
 #include <cstring>
@@ -84,12 +97,37 @@ void TestMacOsPatcher() {
     // Mach-O MH_MAGIC_64 is 0xfeedfacf (0xcf, 0xfa, 0xed, 0xfe in little endian)
     assert(patched[0] == 0xcf && patched[1] == 0xfa && patched[2] == 0xed && patched[3] == 0xfe);
 
-    // Verify Metal bridge initialization functions
+    // Verify Mach-O header commands count (14 load commands)
+    std::uint32_t cmdsCount = 0;
+    std::memcpy(&cmdsCount, patched.data() + 16, 4);
+    assert(cmdsCount == 14);
+
+    // Verify Metal bridge initialization and expanded C API functions
     RytyMetalInitializeDevice();
     assert(RytyMetalIsSupported() != 0);
     assert(RytyMetalGetDeviceName() != nullptr);
     RytyMetalSetClearColor(0.2, 0.2, 0.2, 1.0);
     RytyMetalSetDepthStencilEnabled(1);
+
+    void* tex = RytyMetalCreateTexture2D(256, 256, 80);
+    assert(tex != nullptr);
+    uint32_t dummyPixel = 0xff0000ff;
+    RytyMetalUpdateTexture2D(tex, &dummyPixel, 4);
+    RytyMetalDestroyTexture2D(tex);
+
+    void* buf = RytyMetalCreateBuffer(&dummyPixel, sizeof(dummyPixel));
+    assert(buf != nullptr);
+    RytyMetalUpdateBuffer(buf, &dummyPixel, sizeof(dummyPixel), 0);
+    RytyMetalDestroyBuffer(buf);
+
+    RytyMetalSetViewport(0, 0, 1920, 1080, 0.0, 1.0);
+    RytyMetalSetScissorRect(0, 0, 1920, 1080);
+    RytyMetalSetBlendMode(1);
+    RytyMetalDrawPrimitives(3, 0, 6);
+    RytyMetalDrawIndexedPrimitives(3, 6, 0, buf, 0);
+
+    assert(RytyMetalGetMaxThreadsPerThreadgroup() > 0);
+    assert(RytyMetalSupportsFeatureSet(0) != 0);
 
     std::cout << "  -> PASSED!\n";
 }
