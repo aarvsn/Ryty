@@ -1,5 +1,6 @@
 #include <elfpatcher/macos/MacOsElfPatcher.hpp>
 #include <io/BufferUtils.hpp>
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
@@ -157,6 +158,23 @@ struct LinkeditDataCommand {
     std::uint32_t DataSize;
 };
 
+#pragma pack(push, 1)
+struct Section64 {
+    char SectName[16];
+    char SegName[16];
+    std::uint64_t Addr;
+    std::uint64_t Size;
+    std::uint32_t Offset;
+    std::uint32_t Align;
+    std::uint32_t Reloff;
+    std::uint32_t Nreloc;
+    std::uint32_t Flags;
+    std::uint32_t Reserved1;
+    std::uint32_t Reserved2;
+    std::uint32_t Reserved3;
+};
+#pragma pack(pop)
+
 std::vector<std::uint8_t> makeDylibCommand(const std::string& path) {
     const std::size_t rawSize = sizeof(DylibCommand) + path.size() + 1;
     const std::size_t alignedSize = (rawSize + 7) & ~std::size_t(7);
@@ -277,47 +295,202 @@ MacOsElfPatcher::MacOsElfPatcher() = default;
 
 std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     const std::vector<std::uint8_t>& sourceElf,
-    const std::vector<Domain::ProgramHeader>& originalHeaders,
-    const Domain::SysVDynamicSection& dynamicSection,
-    std::uint64_t originalPltGotVaddr,
+    const std::vector<Domain::ProgramHeader>&,
+    const Domain::SysVDynamicSection&,
+    std::uint64_t,
     const std::string& runPath,
-    bool lazyBinding,
-    bool dependencyDiagnostics,
+    bool, bool,
     const std::vector<Codegen::TrampolineSite>& trampolines
 ) {
-    std::cout << "[Experimental] Building macOS Mach-O bundle with Metal API bridge...\n";
-
-    // Invoke Metal device initialization symbol to link and initialize Metal API context
+    std::cout << "[Experimental] Building macOS Mach-O bundle with Metal API bridge..." << std::endl;
     RytyMetalInitializeDevice();
 
+    // ---- Fixed load commands (kept from the original writer) ----
     const auto dylinkerCmd = makeDylinkerCommand("/usr/lib/dyld");
     const auto buildVerCmd = makeBuildVersionCommand();
-
     const auto metalLibCmd = makeDylibCommand("/System/Library/Frameworks/Metal.framework/Versions/A/Metal");
     const auto metalKitLibCmd = makeDylibCommand("/System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit");
     const auto cocoaLibCmd = makeDylibCommand("/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa");
     const auto quartzCoreLibCmd = makeDylibCommand("/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore");
     const auto libSystemCmd = makeDylibCommand("/usr/lib/libSystem.B.dylib");
-
     std::string rpath = runPath.empty() ? "@executable_path/libs" : runPath;
     const auto rpathCmd = makeRpathCommand(rpath);
 
-    // Load Commands:
-    // PageZero, Text Segment, Data Segment, LinkEdit Segment, Main, Dylinker, BuildVersion, CodeSig, 5 Dylibs, Rpath
-    const std::uint32_t cmdsCount = 14;
-    const std::uint32_t cmdsSize = static_cast<std::uint32_t>(
-        sizeof(SegmentCommand64) * 4 + // PageZero, Text, Data, LinkEdit
-        sizeof(MainCommand) +
-        dylinkerCmd.size() +
-        buildVerCmd.size() +
-        sizeof(LinkeditDataCommand) +
-        metalLibCmd.size() +
-        metalKitLibCmd.size() +
-        cocoaLibCmd.size() +
-        quartzCoreLibCmd.size() +
-        libSystemCmd.size() +
-        rpathCmd.size()
-    );
+    // ---- Parse the incoming (relinked) ELF program headers ----
+    struct GuestLoad { std::uint64_t off, vaddr, filesz, memsz; std::uint32_t flags; };
+    std::vector<GuestLoad> loads;
+    std::uint64_t e_entry = 0;
+    const bool haveElf = sourceElf.size() >= 0x40 && sourceElf[0] == 0x7f && sourceElf[1] == 'E' && sourceElf[2] == 'L' && sourceElf[3] == 'F';
+    if (haveElf) {
+        std::memcpy(&e_entry, sourceElf.data() + 0x18, 8);
+        std::uint64_t phoff = 0; std::memcpy(&phoff, sourceElf.data() + 0x20, 8);
+        std::uint16_t phentsize = 0, phnum = 0;
+        std::memcpy(&phentsize, sourceElf.data() + 0x36, 2);
+        std::memcpy(&phnum, sourceElf.data() + 0x38, 2);
+        for (std::uint16_t i = 0; i < phnum && phoff + (i + 1) * phentsize <= sourceElf.size(); ++i) {
+            const std::size_t o = phoff + i * phentsize;
+            std::uint32_t p_type = 0; std::memcpy(&p_type, sourceElf.data() + o, 4);
+            if (p_type != 1) continue;
+            GuestLoad s{};
+            std::memcpy(&s.flags, sourceElf.data() + o + 4, 4);
+            std::memcpy(&s.off, sourceElf.data() + o + 8, 8);
+            std::memcpy(&s.vaddr, sourceElf.data() + o + 16, 8);
+            std::memcpy(&s.filesz, sourceElf.data() + o + 32, 8);
+            std::memcpy(&s.memsz, sourceElf.data() + o + 40, 8);
+            loads.push_back(s);
+        }
+    }
+    if (loads.empty()) {
+        throw std::runtime_error("macOS writer: input ELF has no PT_LOAD segments; nothing to map");
+    }
+    std::sort(loads.begin(), loads.end(), [](const GuestLoad& a, const GuestLoad& b) { return a.vaddr < b.vaddr; });
+
+    // ---- Group PT_LOADs whose page-rounded spans overlap ----
+    struct GuestSeg {
+        std::uint64_t vmaddr = 0, vmsize = 0, filesz = 0, fileoff = 0, payloadOff = 0;
+        std::uint32_t prot = 0; bool exec = false, direct = false;
+        std::vector<std::uint8_t> image;
+    };
+    std::vector<GuestSeg> segs;
+    {
+        std::size_t i = 0;
+        while (i < loads.size()) {
+            std::size_t j = i;
+            std::uint64_t lo = loads[i].vaddr & ~0xFFFull;
+            std::uint64_t hi = (loads[i].vaddr + loads[i].memsz + 0xFFFull) & ~0xFFFull;
+            std::uint32_t pflags = 0;
+            while (j < loads.size() && loads[j].vaddr < hi) {
+                hi = std::max(hi, (loads[j].vaddr + loads[j].memsz + 0xFFFull) & ~0xFFFull);
+                pflags |= loads[j].flags;
+                ++j;
+            }
+            GuestSeg g{};
+            g.vmaddr = lo;
+            g.vmsize = hi - lo;
+            g.exec = (pflags & 0x1) != 0; // PF_X
+            g.prot = 1;                    // VM_PROT_READ always
+            if (pflags & 0x2) g.prot |= 2; // PF_W -> VM_PROT_WRITE
+            if (pflags & 0x1) g.prot |= 4; // PF_X -> VM_PROT_EXECUTE
+            if ((j - i) == 1 && loads[i].vaddr == lo) {
+                // single, page-aligned LOAD: map straight from the ELF payload bytes
+                g.direct = true;
+                g.payloadOff = loads[i].off;
+                g.filesz = loads[i].filesz;
+            } else {
+                // merged group: build a synthetic vaddr-indexed image (holes = zeroed bss)
+                std::uint64_t imgEnd = 0;
+                for (std::size_t k = i; k < j; ++k) imgEnd = std::max(imgEnd, loads[k].vaddr + loads[k].filesz);
+                g.direct = false;
+                g.filesz = imgEnd > lo ? imgEnd - lo : 0;
+                g.image.assign(static_cast<std::size_t>(g.filesz), 0);
+                for (std::size_t k = i; k < j; ++k) {
+                    if (loads[k].filesz == 0) continue;
+                    std::memcpy(g.image.data() + (loads[k].vaddr - lo),
+                                sourceElf.data() + loads[k].off,
+                                static_cast<std::size_t>(loads[k].filesz));
+                }
+            }
+            segs.push_back(g);
+            i = j;
+        }
+    }
+    bool haveExec = false;
+    for (const auto& g : segs) haveExec |= g.exec;
+
+    // ---- Trampoline + LINKEDIT placement after all guest segments ----
+    std::size_t trampolineTotalSize = 0;
+    for (const auto& site : trampolines) trampolineTotalSize += 16 + site.Body.size();
+    std::uint64_t guestEnd = 0;
+    for (const auto& g : segs) guestEnd = std::max(guestEnd, g.vmaddr + g.vmsize);
+    const std::uint64_t trampVmaddr = guestEnd;
+    const std::uint64_t linkeditVmaddr = (trampVmaddr + trampolineTotalSize + 0xFFFull) & ~0xFFFull;
+
+    // ---- Compute load command sizes and the page-aligned payload position ----
+    const std::uint32_t cmdsCount = static_cast<std::uint32_t>(segs.size() + 2 /*tramp,linkedit*/ + 1 /*main*/
+        + 1 /*dylinker*/ + 1 /*buildver*/ + 5 /*dylibs*/ + 1 /*rpath*/);
+    const std::uint64_t cmdsSize = sizeof(SegmentCommand64) * (segs.size() + 2)
+        + (haveExec ? sizeof(Section64) : 0)
+        + sizeof(MainCommand)
+        + dylinkerCmd.size() + buildVerCmd.size()
+        + metalLibCmd.size() + metalKitLibCmd.size() + cocoaLibCmd.size()
+        + quartzCoreLibCmd.size() + libSystemCmd.size() + rpathCmd.size();
+    const std::uint64_t headerAll = sizeof(MachOHeader64) + cmdsSize;
+    const std::uint64_t payloadFileOff = (headerAll + 0xFFFull) & ~0xFFFull; // page-aligned file position of the ELF
+
+    // ---- Assign file offsets (all page aligned for clean kernel mappings) ----
+    std::uint64_t cursor = payloadFileOff + sourceElf.size();
+    cursor = (cursor + 0xFFFull) & ~0xFFFull;
+    for (auto& g : segs) {
+        if (g.direct) {
+            g.fileoff = payloadFileOff + g.payloadOff;
+        } else {
+            g.fileoff = cursor;
+            cursor += g.filesz;
+            cursor = (cursor + 0xFFFull) & ~0xFFFull;
+        }
+    }
+    const std::uint64_t trampFileOff = cursor;
+    cursor += trampolineTotalSize;
+    cursor = (cursor + 0xFFFull) & ~0xFFFull;
+    const std::uint64_t linkeditFileOff = cursor;
+
+    // ---- Entry point ----
+    std::uint64_t entryoff = 0;
+    bool foundEntry = false;
+    for (const auto& g : segs) {
+        if (e_entry >= g.vmaddr && e_entry < g.vmaddr + g.vmsize) {
+            entryoff = g.fileoff + (e_entry - g.vmaddr);
+            foundEntry = true;
+            break;
+        }
+    }
+    if (!foundEntry) throw std::runtime_error("macOS writer: e_entry outside every guest segment");
+
+    // ---- Patch trampoline sites into payload / synthetic images ----
+    std::vector<std::uint8_t> payload = sourceElf;
+    std::vector<std::uint8_t> trampolineBuf;
+    trampolineBuf.reserve(trampolineTotalSize);
+    for (const auto& site : trampolines) {
+        while (trampolineBuf.size() % 16 != 0) trampolineBuf.push_back(0xcc);
+        const std::uint64_t bodyVaddr = trampVmaddr + trampolineBuf.size();
+        auto body = site.Body;
+        const auto returnDisp = static_cast<std::int64_t>(site.Address + site.Length)
+            - static_cast<std::int64_t>(bodyVaddr + site.ReturnBranchOffset + 5);
+        if (site.ReturnBranchOffset + 5 <= body.size()) {
+            const auto d = static_cast<std::int32_t>(returnDisp);
+            std::memcpy(body.data() + site.ReturnBranchOffset + 1, &d, 4);
+        }
+        trampolineBuf.insert(trampolineBuf.end(), body.begin(), body.end());
+
+        const auto jumpDisp = static_cast<std::int32_t>(
+            static_cast<std::int64_t>(bodyVaddr) - static_cast<std::int64_t>(site.Address + 5));
+        bool patched = false;
+        for (auto& g : segs) {
+            if (site.Address < g.vmaddr || site.Address >= g.vmaddr + g.vmsize) continue;
+            std::uint8_t* dst = nullptr;
+            if (g.direct) dst = payload.data() + (g.payloadOff + (site.Address - g.vmaddr));
+            else dst = g.image.data() + (site.Address - g.vmaddr);
+            std::fill_n(dst, site.Length, 0x90);
+            dst[0] = 0xE9;
+            std::memcpy(dst + 1, &jumpDisp, 4);
+            patched = true;
+            std::cerr << "[ryty] trampoline: site vaddr=0x" << std::hex << site.Address
+                      << " -> body 0x" << bodyVaddr << std::dec << "\n";
+            break;
+        }
+        if (!patched) throw std::runtime_error("macOS writer: trampoline site outside guest segments");
+    }
+
+    // ---- Assemble the Mach-O ----
+    std::vector<std::uint8_t> result;
+    result.reserve(static_cast<std::size_t>(linkeditFileOff + 0x1000));
+    const auto appendBytes = [&](const void* ptr, std::size_t size) {
+        const auto* bytePtr = static_cast<const std::uint8_t*>(ptr);
+        result.insert(result.end(), bytePtr, bytePtr + size);
+    };
+    const auto padTo = [&](std::uint64_t target) {
+        while (result.size() < target) result.push_back(0);
+    };
 
     MachOHeader64 header{};
     header.Magic = MH_MAGIC_64;
@@ -325,133 +498,70 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     header.CpuSubtype = CPU_SUBTYPE_ALL;
     header.FileType = MH_EXECUTE;
     header.CmdsCount = cmdsCount;
-    header.CmdsSize = cmdsSize;
-    header.Flags = 0x00200085; // MH_NOUNDEFS | MH_DYLDLINK | MH_PIE
+    header.CmdsSize = static_cast<std::uint32_t>(cmdsSize);
+    header.Flags = 0x00000005; // MH_NOUNDEFS | MH_DYLDLINK — no MH_PIE: guest absolute addresses
     header.Reserved = 0;
-
-    std::vector<std::uint8_t> result;
-    result.reserve(sizeof(header) + cmdsSize + 16 + sourceElf.size() + 2048);
-
-    const auto appendBytes = [&](const void* ptr, std::size_t size) {
-        const auto* bytePtr = static_cast<const std::uint8_t*>(ptr);
-        result.insert(result.end(), bytePtr, bytePtr + size);
-    };
-
     appendBytes(&header, sizeof(header));
 
-    // PageZero segment
-    SegmentCommand64 pageZero{};
-    pageZero.Cmd = LC_SEGMENT_64;
-    pageZero.CmdSize = sizeof(SegmentCommand64);
-    std::strncpy(pageZero.SegName, "__PAGEZERO", 16);
-    pageZero.VAddr = 0;
-    pageZero.VSize = 0x100000000ull;
-    pageZero.FileOff = 0;
-    pageZero.FileSize = 0;
-    pageZero.MaxProt = 0;
-    pageZero.InitProt = 0;
-    appendBytes(&pageZero, sizeof(pageZero));
-
-    // Calculate header layout and entry stub position
-    const std::uint64_t headerAndCmdsSize = sizeof(MachOHeader64) + header.CmdsSize;
-
-    // Read ELF entry point if present
-    std::uint64_t realEntryVaddr = 0;
-    if (sourceElf.size() >= 0x20 && sourceElf[0] == 0x7f && sourceElf[1] == 'E' && sourceElf[2] == 'L' && sourceElf[3] == 'F') {
-        std::memcpy(&realEntryVaddr, sourceElf.data() + 0x18, 8);
-    }
-
-    const std::uint64_t entryStubOffset = headerAndCmdsSize;
-    constexpr std::size_t entryStubSize = 16;
-    const std::uint64_t payloadOffset = entryStubOffset + entryStubSize;
-
-    // Entry stub code: x86_64 assembly stub setting up stack frame and jumping to payload entry
-    std::vector<std::uint8_t> entryStub(entryStubSize, 0x90); // NOP fill
-    entryStub[0] = 0x48; entryStub[1] = 0x31; entryStub[2] = 0xc0; // xor rax, rax
-    entryStub[3] = 0x48; entryStub[4] = 0x89; entryStub[5] = 0xe5; // mov rbp, rsp
-    entryStub[6] = 0xe9; // jmp rel32
-
-    std::uint64_t targetEntryVaddr = 0x100000000ull + payloadOffset;
-    if (realEntryVaddr != 0) {
-        if (realEntryVaddr >= 0x100000000ull) {
-            targetEntryVaddr = realEntryVaddr;
-        } else {
-            targetEntryVaddr = 0x100000000ull + payloadOffset + realEntryVaddr;
+    std::size_t roCount = 0, rwCount = 0;
+    for (const auto& g : segs) {
+        SegmentCommand64 sc{};
+        sc.Cmd = LC_SEGMENT_64;
+        sc.CmdSize = sizeof(SegmentCommand64) + (g.exec ? sizeof(Section64) : 0);
+        char segName[16] = {};
+        if (g.exec) std::strncpy(segName, "__TEXT", 16);
+        else if (g.prot & 2) std::snprintf(segName, 16, "__DATA%zu", rwCount++);
+        else std::snprintf(segName, 16, "seg_ro%zu", roCount++);
+        std::memcpy(sc.SegName, segName, 16);
+        sc.VAddr = g.vmaddr; sc.VSize = g.vmsize;
+        sc.FileOff = g.fileoff; sc.FileSize = g.filesz;
+        sc.MaxProt = g.prot; sc.InitProt = g.prot;
+        sc.NSects = g.exec ? 1 : 0;
+        appendBytes(&sc, sizeof(sc));
+        if (g.exec) {
+            Section64 sect{};
+            std::memset(sect.SectName, 0, 16); std::memset(sect.SegName, 0, 16);
+            std::strncpy(sect.SectName, "__text", 16);
+            std::memcpy(sect.SegName, segName, 16);
+            sect.Addr = g.vmaddr;
+            sect.Size = g.filesz;
+            sect.Offset = static_cast<std::uint32_t>(g.fileoff);
+            sect.Align = 12; // 2^12 = 4096
+            sect.Flags = 0x80000400; // S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+            appendBytes(&sect, sizeof(sect));
         }
+        std::cerr << "[ryty] segment " << segName << ": vmaddr=0x" << std::hex << g.vmaddr
+                  << " vmsize=0x" << g.vmsize << " fileoff=0x" << g.fileoff
+                  << " filesize=0x" << g.filesz << " prot=" << g.prot << std::dec << "\n";
     }
-
-    const std::uint64_t nextInsnVaddr = 0x100000000ull + entryStubOffset + 11;
-    const auto jmpDisp = static_cast<std::int32_t>(targetEntryVaddr - nextInsnVaddr);
-    std::memcpy(entryStub.data() + 7, &jmpDisp, 4);
-
-    // Prepare payload copy for in-place instruction patching
-    std::vector<std::uint8_t> payload = sourceElf;
-
-    // Calculate total text size including extra trampoline stubs
-    std::size_t trampolineTotalSize = 0;
-    for (const auto& site : trampolines) {
-        trampolineTotalSize += 16 + site.Body.size();
+    {
+        SegmentCommand64 sc{};
+        sc.Cmd = LC_SEGMENT_64; sc.CmdSize = sizeof(SegmentCommand64);
+        std::strncpy(sc.SegName, "seg_tramp", 16);
+        sc.VAddr = trampVmaddr;
+        sc.VSize = (trampolineTotalSize + 0xFFFull) & ~0xFFFull;
+        sc.FileOff = trampFileOff; sc.FileSize = trampolineTotalSize;
+        sc.MaxProt = 5; sc.InitProt = 5;
+        appendBytes(&sc, sizeof(sc));
     }
-
-    const std::uint64_t textSize = entryStubSize + payload.size() + trampolineTotalSize;
-    const std::uint64_t textVSize = (textSize + 0xFFF) & ~0xFFFull;
-
-    SegmentCommand64 textSeg{};
-    textSeg.Cmd = LC_SEGMENT_64;
-    textSeg.CmdSize = sizeof(SegmentCommand64);
-    std::strncpy(textSeg.SegName, "__TEXT", 16);
-    textSeg.VAddr = 0x100000000ull;
-    textSeg.VSize = textVSize;
-    textSeg.FileOff = headerAndCmdsSize;
-    textSeg.FileSize = textSize;
-    textSeg.MaxProt = 7; // VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE
-    textSeg.InitProt = 5; // VM_PROT_READ | VM_PROT_EXECUTE
-    appendBytes(&textSeg, sizeof(textSeg));
-
-    // Data segment for writable memory
-    const std::uint64_t dataVAddr = 0x100000000ull + textVSize;
-    constexpr std::uint64_t dataSize = 0x1000;
-    SegmentCommand64 dataSeg{};
-    dataSeg.Cmd = LC_SEGMENT_64;
-    dataSeg.CmdSize = sizeof(SegmentCommand64);
-    std::strncpy(dataSeg.SegName, "__DATA", 16);
-    dataSeg.VAddr = dataVAddr;
-    dataSeg.VSize = dataSize;
-    dataSeg.FileOff = headerAndCmdsSize + textSize;
-    dataSeg.FileSize = 0; // BSS style data
-    dataSeg.MaxProt = 3; // VM_PROT_READ | VM_PROT_WRITE
-    dataSeg.InitProt = 3; // VM_PROT_READ | VM_PROT_WRITE
-    appendBytes(&dataSeg, sizeof(dataSeg));
-
-    // LinkEdit segment for Code Signature
-    const std::uint64_t codeSigFileOff = headerAndCmdsSize + textSize;
-    const std::uint64_t codeSigBlobSize = makeAdHocCodeSignatureBlob(codeSigFileOff).size();
-
-    SegmentCommand64 linkeditSeg{};
-    linkeditSeg.Cmd = LC_SEGMENT_64;
-    linkeditSeg.CmdSize = sizeof(SegmentCommand64);
-    std::strncpy(linkeditSeg.SegName, "__LINKEDIT", 16);
-    linkeditSeg.VAddr = dataVAddr + dataSize;
-    linkeditSeg.VSize = (codeSigBlobSize + 0xFFF) & ~0xFFFull;
-    linkeditSeg.FileOff = codeSigFileOff;
-    linkeditSeg.FileSize = codeSigBlobSize;
-    linkeditSeg.MaxProt = 1; // VM_PROT_READ
-    linkeditSeg.InitProt = 1; // VM_PROT_READ
-    appendBytes(&linkeditSeg, sizeof(linkeditSeg));
-
-    MainCommand mainCmd{};
-    mainCmd.Cmd = LC_MAIN;
-    mainCmd.CmdSize = sizeof(MainCommand);
-    mainCmd.EntryOffset = entryStubOffset; // Points to valid entry stub instructions
-    mainCmd.StackSize = 0;
-    appendBytes(&mainCmd, sizeof(mainCmd));
-
+    {
+        SegmentCommand64 sc{};
+        sc.Cmd = LC_SEGMENT_64; sc.CmdSize = sizeof(SegmentCommand64);
+        std::strncpy(sc.SegName, "__LINKEDIT", 16);
+        sc.VAddr = linkeditVmaddr; sc.VSize = 0x1000;
+        sc.FileOff = linkeditFileOff; sc.FileSize = 0; // codesign(1) fills this
+        sc.MaxProt = 1; sc.InitProt = 1;
+        appendBytes(&sc, sizeof(sc));
+    }
+    {
+        MainCommand mainCmd{};
+        mainCmd.Cmd = LC_MAIN; mainCmd.CmdSize = sizeof(MainCommand);
+        mainCmd.EntryOffset = entryoff;
+        mainCmd.StackSize = 0;
+        appendBytes(&mainCmd, sizeof(mainCmd));
+    }
     appendBytes(dylinkerCmd.data(), dylinkerCmd.size());
     appendBytes(buildVerCmd.data(), buildVerCmd.size());
-
-    const auto codeSigCmd = makeCodeSignatureCommand(static_cast<std::uint32_t>(codeSigFileOff), static_cast<std::uint32_t>(codeSigBlobSize));
-    appendBytes(codeSigCmd.data(), codeSigCmd.size());
-
     appendBytes(metalLibCmd.data(), metalLibCmd.size());
     appendBytes(metalKitLibCmd.data(), metalKitLibCmd.size());
     appendBytes(cocoaLibCmd.data(), cocoaLibCmd.size());
@@ -459,50 +569,20 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     appendBytes(libSystemCmd.data(), libSystemCmd.size());
     appendBytes(rpathCmd.data(), rpathCmd.size());
 
-    // Append entry stub
-    result.insert(result.end(), entryStub.begin(), entryStub.end());
-
-    // Process trampolines if present
-    std::vector<std::uint8_t> trampolineBuf;
-    trampolineBuf.reserve(trampolineTotalSize);
-
-    for (const auto& site : trampolines) {
-        if (site.Offset < payload.size() && site.Length <= payload.size() - site.Offset) {
-            while ((result.size() + payload.size() + trampolineBuf.size()) % 16 != 0) {
-                trampolineBuf.push_back(0xcc); // INT 3 padding
-            }
-
-            const std::uint64_t bodyOff = result.size() + payload.size() + trampolineBuf.size();
-            const std::uint64_t bodyVaddr = 0x100000000ull + bodyOff;
-
-            auto body = site.Body;
-            const auto returnDisplacement = static_cast<std::int64_t>(site.Address + site.Length) -
-                static_cast<std::int64_t>(bodyVaddr + site.ReturnBranchOffset + 5);
-            if (site.ReturnBranchOffset + 5 <= body.size()) {
-                const auto disp32 = static_cast<std::int32_t>(returnDisplacement);
-                std::memcpy(body.data() + site.ReturnBranchOffset + 1, &disp32, 4);
-            }
-
-            trampolineBuf.insert(trampolineBuf.end(), body.begin(), body.end());
-
-            // Patch jump in payload
-            const std::uint64_t siteVaddr = 0x100000000ull + payloadOffset + site.Offset;
-            const auto jumpDisplacement = static_cast<std::int32_t>(bodyVaddr - (siteVaddr + 5));
-
-            std::fill_n(payload.begin() + static_cast<std::ptrdiff_t>(site.Offset), site.Length, 0x90); // NOP
-            payload[site.Offset] = 0xe9; // JMP rel32
-            std::memcpy(payload.data() + site.Offset + 1, &jumpDisplacement, 4);
-        }
+    // ---- File data: payload, synthetic images, trampolines ----
+    padTo(payloadFileOff);
+    appendBytes(payload.data(), payload.size());
+    for (const auto& g : segs) {
+        if (g.direct) continue;
+        padTo(g.fileoff);
+        if (g.filesz > 0) appendBytes(g.image.data(), g.image.size());
     }
+    padTo(trampFileOff);
+    appendBytes(trampolineBuf.data(), trampolineBuf.size());
+    padTo(linkeditFileOff); // __LINKEDIT must start within the file even when empty
 
-    // Append patched payload and trampoline bodies
-    result.insert(result.end(), payload.begin(), payload.end());
-    result.insert(result.end(), trampolineBuf.begin(), trampolineBuf.end());
-
-    // Append ad-hoc code signature blob
-    const auto codeSigBlob = makeAdHocCodeSignatureBlob(codeSigFileOff);
-    result.insert(result.end(), codeSigBlob.begin(), codeSigBlob.end());
-
+    std::cerr << "[ryty] e_entry=0x" << std::hex << e_entry << " entryoff=0x" << entryoff
+              << std::dec << " | total size " << result.size() << " bytes\n";
     return result;
 }
 
