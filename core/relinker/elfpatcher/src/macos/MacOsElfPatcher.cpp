@@ -319,6 +319,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     // ---- Parse the incoming (relinked) ELF program headers ----
     struct GuestLoad { std::uint64_t off, vaddr, filesz, memsz; std::uint32_t flags; };
     std::vector<GuestLoad> loads;
+    std::uint64_t dynOff = 0, dynSz = 0;
     std::uint64_t e_entry = 0;
     const bool haveElf = sourceElf.size() >= 0x40 && sourceElf[0] == 0x7f && sourceElf[1] == 'E' && sourceElf[2] == 'L' && sourceElf[3] == 'F';
     if (haveElf) {
@@ -330,6 +331,10 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         for (std::uint16_t i = 0; i < phnum && phoff + (i + 1) * phentsize <= sourceElf.size(); ++i) {
             const std::size_t o = phoff + i * phentsize;
             std::uint32_t p_type = 0; std::memcpy(&p_type, sourceElf.data() + o, 4);
+            if (p_type == 2) { // PT_DYNAMIC
+                std::memcpy(&dynOff, sourceElf.data() + o + 8, 8);
+                std::memcpy(&dynSz, sourceElf.data() + o + 32, 8);
+            }
             if (p_type != 1) continue;
             GuestLoad s{};
             std::memcpy(&s.flags, sourceElf.data() + o + 4, 4);
@@ -344,6 +349,105 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         throw std::runtime_error("macOS writer: input ELF has no PT_LOAD segments; nothing to map");
     }
     std::sort(loads.begin(), loads.end(), [](const GuestLoad& a, const GuestLoad& b) { return a.vaddr < b.vaddr; });
+
+    // ---- Rebase: Apple-Silicon Rosetta reserves the low address space of
+    // translated processes, so guests loading below 0x10000000 cannot be
+    // mapped at their own vaddrs. Shift such guests to 0x10000000 and apply
+    // the ELF's own dynamic relocations so every in-image pointer follows.
+    std::vector<std::uint8_t> payload = sourceElf;
+    const std::uint64_t guestLo = loads.front().vaddr & ~0xFFFull;
+    std::uint64_t guestHi = 0;
+    for (const auto& l : loads) guestHi = std::max(guestHi, l.vaddr + l.memsz);
+    const std::uint64_t rebase = (guestLo < 0x10000000ull) ? (0x10000000ull - guestLo) : 0;
+    if (rebase != 0) {
+        std::cerr << "[ryty] rebase: guest [0x" << std::hex << guestLo << "..0x" << guestHi
+                  << "] shifted by 0x" << rebase << std::dec << "\n";
+    }
+    if (rebase != 0 && dynOff != 0 && dynSz > 0) {
+        const auto v2o = [&](std::uint64_t v) -> std::size_t {
+            for (const auto& l : loads)
+                if (l.vaddr <= v && v < l.vaddr + l.filesz)
+                    return static_cast<std::size_t>(l.off + (v - l.vaddr));
+            return static_cast<std::size_t>(-1);
+        };
+        std::uint64_t relaV = 0, relaSz = 0, symtabV = 0;
+        std::uint64_t jmprelV = 0, pltrelSz = 0;
+        const std::size_t dynF = static_cast<std::size_t>(dynOff);
+        for (std::uint64_t d = 0; d + 16 <= dynSz; d += 16) {
+            std::uint64_t tag = 0, val = 0;
+            std::memcpy(&tag, payload.data() + dynF + d, 8);
+            std::memcpy(&val, payload.data() + dynF + d + 8, 8);
+            if (tag == 0) break;
+            if (tag == 7) relaV = val;              // DT_RELA
+            else if (tag == 8) relaSz = val;        // DT_RELASZ
+            else if (tag == 6) symtabV = val;       // DT_SYMTAB
+            else if (tag == 23) jmprelV = val;      // DT_JMPREL
+            else if (tag == 2) pltrelSz = val;      // DT_PLTRELSZ
+            else if ((tag == 12 || tag == 13) && guestLo <= val && val < guestHi) {
+                // DT_INIT / DT_FINI hold function pointers in the old space
+                const std::uint64_t fixed = val + rebase;
+                std::memcpy(payload.data() + dynF + d + 8, &fixed, 8);
+            }
+        }
+        const std::size_t relaF = v2o(relaV);
+        if (relaF != static_cast<std::size_t>(-1) && relaSz > 0 && relaSz % 24 == 0) {
+            std::uint64_t applied = 0, skipped = 0;
+            for (std::uint64_t r = 0; r + 24 <= relaSz; r += 24) {
+                std::uint64_t rOff = 0, rInfo = 0, rAdd = 0;
+                std::memcpy(&rOff, payload.data() + relaF + r, 8);
+                std::memcpy(&rInfo, payload.data() + relaF + r + 8, 8);
+                std::memcpy(&rAdd, payload.data() + relaF + r + 16, 8);
+                const std::uint32_t rtype = static_cast<std::uint32_t>(rInfo & 0xffffffffull);
+                std::uint64_t value = 0;
+                if (rtype == 8) { // R_X86_64_RELATIVE: *ptr = base + addend
+                    value = rAdd;
+                } else if (rtype == 1 || rtype == 6) { // R_X86_64_64 / GLOB_DAT
+                    const std::uint64_t symIdx = rInfo >> 32;
+                    if (symtabV == 0) { ++skipped; continue; }
+                    const std::size_t symF = v2o(symtabV + symIdx * 24);
+                    if (symF == static_cast<std::size_t>(-1)) { ++skipped; continue; }
+                    std::uint64_t stShndx = 0, stValue = 0;
+                    std::memcpy(&stShndx, payload.data() + symF + 6, 2);
+                    std::memcpy(&stValue, payload.data() + symF + 8, 8);
+                    if (stShndx == 0 || stValue == 0) { ++skipped; continue; } // external import
+                    value = stValue + rAdd;
+                } else {
+                    ++skipped; continue;
+                }
+                if (!(guestLo <= value && value < guestHi)) { ++skipped; continue; }
+                const std::size_t dstF = v2o(rOff);
+                if (dstF == static_cast<std::size_t>(-1)) { ++skipped; continue; }
+                const std::uint64_t fixed = value + rebase;
+                std::memcpy(payload.data() + dstF, &fixed, 8);
+                ++applied;
+            }
+            std::cerr << "[ryty] rebase: relocations applied=" << applied << " skipped=" << skipped << "\n";
+        }
+        // PLT/GOT lazy-binding slots (DT_JMPREL, R_X86_64_JUMP_SLOT): the slots
+        // initially hold PLT-stub pointers in the old space — shift them too.
+        const std::size_t jmpF = v2o(jmprelV);
+        if (jmpF != static_cast<std::size_t>(-1) && pltrelSz > 0 && pltrelSz % 24 == 0) {
+            std::uint64_t applied = 0, skipped = 0;
+            for (std::uint64_t r = 0; r + 24 <= pltrelSz; r += 24) {
+                std::uint64_t rOff = 0, rInfo = 0;
+                std::memcpy(&rOff, payload.data() + jmpF + r, 8);
+                std::memcpy(&rInfo, payload.data() + jmpF + r + 8, 8);
+                if ((rInfo & 0xffffffffull) != 7) continue; // R_X86_64_JUMP_SLOT
+                const std::size_t slotF = v2o(rOff);
+                if (slotF == static_cast<std::size_t>(-1)) { ++skipped; continue; }
+                std::uint64_t v = 0;
+                std::memcpy(&v, payload.data() + slotF, 8);
+                if (guestLo <= v && v < guestHi) {
+                    v += rebase;
+                    std::memcpy(payload.data() + slotF, &v, 8);
+                    ++applied;
+                } else {
+                    ++skipped;
+                }
+            }
+            std::cerr << "[ryty] rebase: PLT/GOT slots applied=" << applied << " skipped=" << skipped << "\n";
+        }
+    }
 
     // ---- Group PT_LOADs whose page-rounded spans overlap ----
     struct GuestSeg {
@@ -365,7 +469,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
                 ++j;
             }
             GuestSeg g{};
-            g.vmaddr = lo;
+            g.vmaddr = lo + rebase;
             g.vmsize = hi - lo;
             g.exec = (pflags & 0x1) != 0; // PF_X
             g.prot = 1;                    // VM_PROT_READ always
@@ -386,7 +490,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
                 for (std::size_t k = i; k < j; ++k) {
                     if (loads[k].filesz == 0) continue;
                     std::memcpy(g.image.data() + (loads[k].vaddr - lo),
-                                sourceElf.data() + loads[k].off,
+                                payload.data() + loads[k].off,
                                 static_cast<std::size_t>(loads[k].filesz));
                 }
             }
@@ -437,9 +541,10 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     // ---- Entry point ----
     std::uint64_t entryoff = 0;
     bool foundEntry = false;
+    const std::uint64_t entryVA = e_entry + rebase;
     for (const auto& g : segs) {
-        if (e_entry >= g.vmaddr && e_entry < g.vmaddr + g.vmsize) {
-            entryoff = g.fileoff + (e_entry - g.vmaddr);
+        if (entryVA >= g.vmaddr && entryVA < g.vmaddr + g.vmsize) {
+            entryoff = g.fileoff + (entryVA - g.vmaddr);
             foundEntry = true;
             break;
         }
@@ -447,14 +552,14 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     if (!foundEntry) throw std::runtime_error("macOS writer: e_entry outside every guest segment");
 
     // ---- Patch trampoline sites into payload / synthetic images ----
-    std::vector<std::uint8_t> payload = sourceElf;
     std::vector<std::uint8_t> trampolineBuf;
     trampolineBuf.reserve(trampolineTotalSize);
     for (const auto& site : trampolines) {
+        const std::uint64_t siteVA = site.Address + rebase;
         while (trampolineBuf.size() % 16 != 0) trampolineBuf.push_back(0xcc);
         const std::uint64_t bodyVaddr = trampVmaddr + trampolineBuf.size();
         auto body = site.Body;
-        const auto returnDisp = static_cast<std::int64_t>(site.Address + site.Length)
+        const auto returnDisp = static_cast<std::int64_t>(siteVA + site.Length)
             - static_cast<std::int64_t>(bodyVaddr + site.ReturnBranchOffset + 5);
         if (site.ReturnBranchOffset + 5 <= body.size()) {
             const auto d = static_cast<std::int32_t>(returnDisp);
@@ -463,18 +568,18 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         trampolineBuf.insert(trampolineBuf.end(), body.begin(), body.end());
 
         const auto jumpDisp = static_cast<std::int32_t>(
-            static_cast<std::int64_t>(bodyVaddr) - static_cast<std::int64_t>(site.Address + 5));
+            static_cast<std::int64_t>(bodyVaddr) - static_cast<std::int64_t>(siteVA + 5));
         bool patched = false;
         for (auto& g : segs) {
-            if (site.Address < g.vmaddr || site.Address >= g.vmaddr + g.vmsize) continue;
+            if (siteVA < g.vmaddr || siteVA >= g.vmaddr + g.vmsize) continue;
             std::uint8_t* dst = nullptr;
-            if (g.direct) dst = payload.data() + (g.payloadOff + (site.Address - g.vmaddr));
-            else dst = g.image.data() + (site.Address - g.vmaddr);
+            if (g.direct) dst = payload.data() + (g.payloadOff + (siteVA - g.vmaddr));
+            else dst = g.image.data() + (siteVA - g.vmaddr);
             std::fill_n(dst, site.Length, 0x90);
             dst[0] = 0xE9;
             std::memcpy(dst + 1, &jumpDisp, 4);
             patched = true;
-            std::cerr << "[ryty] trampoline: site vaddr=0x" << std::hex << site.Address
+            std::cerr << "[ryty] trampoline: site vaddr=0x" << std::hex << siteVA
                       << " -> body 0x" << bodyVaddr << std::dec << "\n";
             break;
         }
