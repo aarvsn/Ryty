@@ -76,14 +76,33 @@ void TestPs4Detection() {
 
 void TestMacOsPatcher() {
     std::cout << "[Test] Running TestMacOsPatcher...\n";
-    std::vector<std::uint8_t> dummyElf(256, 0x90);
-    // Minimal ELF header magic
-    dummyElf[0] = 0x7f; dummyElf[1] = 'E'; dummyElf[2] = 'L'; dummyElf[3] = 'F';
+    // Minimal well-formed ELF64: header + one PT_LOAD (R|X) at vaddr 0x10000000.
+    std::vector<std::uint8_t> dummyElf(0x3000, 0);
+    const std::uint8_t ident[16] = {0x7f, 'E', 'L', 'F', 2, 1, 1, 0x09, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::memcpy(dummyElf.data(), ident, 16);
+    auto put16 = [&](std::size_t off, std::uint16_t v) { std::memcpy(dummyElf.data() + off, &v, 2); };
+    auto put32 = [&](std::size_t off, std::uint32_t v) { std::memcpy(dummyElf.data() + off, &v, 4); };
+    auto put64 = [&](std::size_t off, std::uint64_t v) { std::memcpy(dummyElf.data() + off, &v, 8); };
+    put16(16, 2);           // e_type = ET_EXEC
+    put16(18, 0x3e);        // e_machine = EM_X86_64
+    put32(20, 1);           // e_version
+    put64(24, 0x10000000);  // e_entry
+    put64(32, 64);          // e_phoff
+    put16(54, 64);          // e_ehsize
+    put16(56, 56);          // e_phentsize
+    put16(58, 1);           // e_phnum
+    put32(64, 1);           // p_type = PT_LOAD
+    put32(68, 5);           // p_flags = R|X
+    put64(72, 0x1000);      // p_offset
+    put64(80, 0x10000000);  // p_vaddr
+    put64(88, 0x10000000);  // p_paddr
+    put64(96, 0x2000);      // p_filesz
+    put64(104, 0x2000);     // p_memsz
 
     std::vector<Codegen::TrampolineSite> trampolines;
     trampolines.push_back({
-        32, // Offset
-        0x100000020ull, // Address
+        32, // Offset (payload byte 0x1000 + 0x20)
+        0x10000020ull, // Address (guest vaddr inside the PT_LOAD)
         5, // Length
         {0x0f, 0x38, 0xc8, 0x01, 0x00}, // Original bytes
         {0x48, 0x31, 0xc0, 0xe9, 0x00, 0x00, 0x00, 0x00}, // Body
@@ -97,10 +116,23 @@ void TestMacOsPatcher() {
     // Mach-O MH_MAGIC_64 is 0xfeedfacf (0xcf, 0xfa, 0xed, 0xfe in little endian)
     assert(patched[0] == 0xcf && patched[1] == 0xfa && patched[2] == 0xed && patched[3] == 0xfe);
 
-    // Verify Mach-O header commands count (14 load commands)
+    // Load command count: one LC_SEGMENT_64 per PT_LOAD (1) plus seg_tramp,
+    // __LINKEDIT, LC_MAIN, LC_LOAD_DYLINKER, LC_BUILD_VERSION, 5 dylibs and LC_RPATH.
     std::uint32_t cmdsCount = 0;
     std::memcpy(&cmdsCount, patched.data() + 16, 4);
-    assert(cmdsCount == 14);
+    assert(cmdsCount == 1 /* PT_LOAD segments */ + 11);
+
+    // The first command must be an executable LC_SEGMENT_64 ("__TEXT")
+    // mapped at the guest's own PT_LOAD vaddr (no rebasing).
+    std::uint32_t firstCmd = 0;
+    std::memcpy(&firstCmd, patched.data() + 32, 4);
+    assert(firstCmd == 0x19); // LC_SEGMENT_64
+    char segname[16] = {};
+    std::memcpy(segname, patched.data() + 40, 16);
+    assert(std::strncmp(segname, "__TEXT", 6) == 0);
+    std::uint64_t textVmaddr = 0;
+    std::memcpy(&textVmaddr, patched.data() + 56, 8);
+    assert(textVmaddr == 0x10000000);
 
     // Verify Metal bridge initialization and expanded C API functions
     RytyMetalInitializeDevice();
