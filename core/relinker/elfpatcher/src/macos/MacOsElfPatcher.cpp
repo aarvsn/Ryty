@@ -464,7 +464,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
             std::uint64_t hi = (loads[i].vaddr + loads[i].memsz + 0xFFFull) & ~0xFFFull;
             std::uint32_t pflags = 0;
             while (j < loads.size() && loads[j].vaddr < hi) {
-                hi = std::max(hi, (loads[j].vaddr + loads[j].memsz + 0xFFFull) & ~0xFFFull);
+                hi = std::max(hi, (loads[j].vaddr + loads[j].memsz + 0xFFFull) & ~static_cast<std::uint64_t>(0xFFFull));
                 pflags |= loads[j].flags;
                 ++j;
             }
