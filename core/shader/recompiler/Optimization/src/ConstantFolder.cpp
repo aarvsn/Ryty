@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 
 namespace ShaderRecompiler {
@@ -77,6 +78,25 @@ template <typename TFunction> bool foldLogical(IrBuilder& builder, IrValue& inst
         return false;
     }
     replaceWith(inst, builder.ConstantBool(function(lhs.ImmediateBool(), rhs.ImmediateBool())));
+    return true;
+}
+
+template <typename TFunction> bool foldF32(IrBuilder& builder, IrValue& inst, TFunction function) {
+    auto& lhs = resolveArg(inst, 0);
+    auto& rhs = resolveArg(inst, 1);
+    if (!isImmediate(lhs, IrType::F32) || !isImmediate(rhs, IrType::F32)) {
+        return false;
+    }
+    replaceWith(inst, builder.ConstantF32(static_cast<float>(function(lhs.ImmediateF32(), rhs.ImmediateF32()))));
+    return true;
+}
+
+template <typename TFunction> bool foldF32Unary(IrBuilder& builder, IrValue& inst, TFunction function) {
+    auto& operand = resolveArg(inst, 0);
+    if (!isImmediate(operand, IrType::F32)) {
+        return false;
+    }
+    replaceWith(inst, builder.ConstantF32(static_cast<float>(function(operand.ImmediateF32()))));
     return true;
 }
 
@@ -234,6 +254,86 @@ bool ConstantFolder::tryFoldValue(IrProgram& program, IrValue& value) const {
             const auto bits = source.ImmediateU32() << left;
             replaceWith(value, builder.Constant(static_cast<std::uint32_t>(std::bit_cast<std::int32_t>(bits) >> (left + offset.ImmediateU32()))));
             return true;
+        }
+        case IrOpcode::FPAdd32:
+        case IrOpcode::FAdd32: {
+            if (foldF32(builder, value, [](float a, float b) { return a + b; })) {
+                return true;
+            }
+            auto& lhs = resolveArg(value, 0);
+            auto& rhs = resolveArg(value, 1);
+            if (isImmediate(lhs, IrType::F32) && lhs.ImmediateF32() == 0.0f) {
+                replaceWith(value, rhs);
+                return true;
+            }
+            if (isImmediate(rhs, IrType::F32) && rhs.ImmediateF32() == 0.0f) {
+                replaceWith(value, lhs);
+                return true;
+            }
+            return false;
+        }
+        case IrOpcode::FPSub32:
+        case IrOpcode::FSub32: {
+            if (foldF32(builder, value, [](float a, float b) { return a - b; })) {
+                return true;
+            }
+            auto& rhs = resolveArg(value, 1);
+            if (isImmediate(rhs, IrType::F32) && rhs.ImmediateF32() == 0.0f) {
+                replaceWith(value, resolveArg(value, 0));
+                return true;
+            }
+            return false;
+        }
+        case IrOpcode::FPMul32:
+        case IrOpcode::FMul32: {
+            if (foldF32(builder, value, [](float a, float b) { return a * b; })) {
+                return true;
+            }
+            auto& lhs = resolveArg(value, 0);
+            auto& rhs = resolveArg(value, 1);
+            if (isImmediate(lhs, IrType::F32) && lhs.ImmediateF32() == 1.0f) {
+                replaceWith(value, rhs);
+                return true;
+            }
+            if (isImmediate(rhs, IrType::F32) && rhs.ImmediateF32() == 1.0f) {
+                replaceWith(value, lhs);
+                return true;
+            }
+            return false;
+        }
+        case IrOpcode::FPFma32:
+        case IrOpcode::FFma32: {
+            auto& a = resolveArg(value, 0);
+            auto& b = resolveArg(value, 1);
+            auto& c = resolveArg(value, 2);
+            if (isImmediate(a, IrType::F32) && isImmediate(b, IrType::F32) && isImmediate(c, IrType::F32)) {
+                replaceWith(value, builder.ConstantF32(std::fma(a.ImmediateF32(), b.ImmediateF32(), c.ImmediateF32())));
+                return true;
+            }
+            return false;
+        }
+        case IrOpcode::FPNeg32:
+        case IrOpcode::FNegate32: {
+            return foldF32Unary(builder, value, [](float a) { return -a; });
+        }
+        case IrOpcode::FPAbs32:
+        case IrOpcode::FAbs32: {
+            return foldF32Unary(builder, value, [](float a) { return std::fabs(a); });
+        }
+        case IrOpcode::FPSaturate32: {
+            return foldF32Unary(builder, value, [](float a) { return std::clamp(a, 0.0f, 1.0f); });
+        }
+        case IrOpcode::FPMin32:
+        case IrOpcode::FMin32: {
+            return foldF32(builder, value, [](float a, float b) { return std::fmin(a, b); });
+        }
+        case IrOpcode::FPMax32:
+        case IrOpcode::FMax32: {
+            return foldF32(builder, value, [](float a, float b) { return std::fmax(a, b); });
+        }
+        case IrOpcode::FPSqrt:
+        case IrOpcode::FSqrt32: {
+            return foldF32Unary(builder, value, [](float a) { return std::sqrt(a); });
         }
         case IrOpcode::BitCastU16F16: return foldBitCast(builder, value, IrOpcode::BitCastF16U16);
         case IrOpcode::BitCastF16U16: return foldBitCast(builder, value, IrOpcode::BitCastU16F16);

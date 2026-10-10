@@ -4,6 +4,14 @@ All notable changes to Ryty are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-10-07
+
+### Fixed
+- **macOS Mach-O Patcher CI**: Fixed type ambiguity in `MacOsElfPatcher.cpp` page alignment mask calculation (`PageMask`) ensuring template argument deduction for `std::max` succeeds across all 64-bit platforms.
+
+### Enhanced
+- **Shader Recompiler Constant Folding**: Expanded `ConstantFolder` to support floating-point 32-bit constant folding and identity simplifications (`FPAdd32`, `FPSub32`, `FPMul32`, `FPFma32`, `FPNeg32`, `FPAbs32`, `FPSaturate32`, `FPMin32`, `FPMax32`, `FPSqrt`) for PS5 shader translation optimizations.
+
 ## [1.0.4] - 2026-10-06
 
 ### Enhanced
