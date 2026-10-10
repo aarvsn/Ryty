@@ -355,7 +355,8 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     // mapped at their own vaddrs. Shift such guests to 0x10000000 and apply
     // the ELF's own dynamic relocations so every in-image pointer follows.
     std::vector<std::uint8_t> payload = sourceElf;
-    const std::uint64_t guestLo = loads.front().vaddr & ~0xFFFull;
+    constexpr std::uint64_t PageMask = static_cast<std::uint64_t>(0xFFF);
+    const std::uint64_t guestLo = loads.front().vaddr & ~PageMask;
     std::uint64_t guestHi = 0;
     for (const auto& l : loads) guestHi = std::max(guestHi, l.vaddr + l.memsz);
     const std::uint64_t rebase = (guestLo < 0x10000000ull) ? (0x10000000ull - guestLo) : 0;
@@ -460,11 +461,11 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         std::size_t i = 0;
         while (i < loads.size()) {
             std::size_t j = i;
-            std::uint64_t lo = loads[i].vaddr & ~0xFFFull;
-            std::uint64_t hi = (loads[i].vaddr + loads[i].memsz + 0xFFFull) & ~0xFFFull;
+            std::uint64_t lo = loads[i].vaddr & ~PageMask;
+            std::uint64_t hi = (loads[i].vaddr + loads[i].memsz + PageMask) & ~PageMask;
             std::uint32_t pflags = 0;
             while (j < loads.size() && loads[j].vaddr < hi) {
-                hi = std::max(hi, (loads[j].vaddr + loads[j].memsz + 0xFFFull) & ~static_cast<std::uint64_t>(0xFFFull));
+                hi = std::max(hi, (loads[j].vaddr + loads[j].memsz + PageMask) & ~PageMask);
                 pflags |= loads[j].flags;
                 ++j;
             }
@@ -507,7 +508,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     std::uint64_t guestEnd = 0;
     for (const auto& g : segs) guestEnd = std::max(guestEnd, g.vmaddr + g.vmsize);
     const std::uint64_t trampVmaddr = guestEnd;
-    const std::uint64_t linkeditVmaddr = (trampVmaddr + trampolineTotalSize + 0xFFFull) & ~0xFFFull;
+    const std::uint64_t linkeditVmaddr = (trampVmaddr + trampolineTotalSize + PageMask) & ~PageMask;
 
     // ---- Compute load command sizes and the page-aligned payload position ----
     const std::uint32_t cmdsCount = static_cast<std::uint32_t>(segs.size() + 2 /*tramp,linkedit*/ + 1 /*main*/
@@ -519,23 +520,23 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         + metalLibCmd.size() + metalKitLibCmd.size() + cocoaLibCmd.size()
         + quartzCoreLibCmd.size() + libSystemCmd.size() + rpathCmd.size();
     const std::uint64_t headerAll = sizeof(MachOHeader64) + cmdsSize;
-    const std::uint64_t payloadFileOff = (headerAll + 0xFFFull) & ~0xFFFull; // page-aligned file position of the ELF
+    const std::uint64_t payloadFileOff = (headerAll + PageMask) & ~PageMask; // page-aligned file position of the ELF
 
     // ---- Assign file offsets (all page aligned for clean kernel mappings) ----
     std::uint64_t cursor = payloadFileOff + sourceElf.size();
-    cursor = (cursor + 0xFFFull) & ~0xFFFull;
+    cursor = (cursor + PageMask) & ~PageMask;
     for (auto& g : segs) {
         if (g.direct) {
             g.fileoff = payloadFileOff + g.payloadOff;
         } else {
             g.fileoff = cursor;
             cursor += g.filesz;
-            cursor = (cursor + 0xFFFull) & ~0xFFFull;
+            cursor = (cursor + PageMask) & ~PageMask;
         }
     }
     const std::uint64_t trampFileOff = cursor;
     cursor += trampolineTotalSize;
-    cursor = (cursor + 0xFFFull) & ~0xFFFull;
+    cursor = (cursor + PageMask) & ~PageMask;
     const std::uint64_t linkeditFileOff = cursor;
 
     // ---- Entry point ----
@@ -644,7 +645,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         sc.Cmd = LC_SEGMENT_64; sc.CmdSize = sizeof(SegmentCommand64);
         std::strncpy(sc.SegName, "seg_tramp", 16);
         sc.VAddr = trampVmaddr;
-        sc.VSize = (trampolineTotalSize + 0xFFFull) & ~0xFFFull;
+        sc.VSize = (trampolineTotalSize + PageMask) & ~PageMask;
         sc.FileOff = trampFileOff; sc.FileSize = trampolineTotalSize;
         sc.MaxProt = 5; sc.InitProt = 5;
         appendBytes(&sc, sizeof(sc));
