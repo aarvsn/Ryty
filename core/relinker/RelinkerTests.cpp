@@ -97,9 +97,9 @@ void TestMacOsPatcher() {
     put32(20, 1);           // e_version
     put64(24, 0x10000000);  // e_entry
     put64(32, 64);          // e_phoff
-    put16(54, 64);          // e_ehsize
-    put16(56, 56);          // e_phentsize
-    put16(58, 1);           // e_phnum
+    put16(52, 64);
+    put16(54, 56);
+    put16(56, 1);
     put32(64, 1);           // p_type = PT_LOAD
     put32(68, 5);           // p_flags = R|X
     put64(72, 0x1000);      // p_offset
@@ -144,7 +144,15 @@ void TestMacOsPatcher() {
     std::memcpy(&textVmaddr, patched.data() + 56, 8);
     assert(textVmaddr == 0x10000000);
 
-    // Verify Metal bridge initialization and expanded C API functions
+    std::cout << "  -> PASSED!\n";
+}
+
+void TestMetalBridge() {
+    std::cout << "[Test] Running TestMetalBridge...\n";
+    if (RytyMetalIsSupported() == 0) {
+        std::cout << "  -> SKIPPED (Metal device unavailable)\n";
+        return;
+    }
     RytyMetalInitializeDevice();
     assert(RytyMetalIsSupported() != 0);
     assert(RytyMetalGetDeviceName() != nullptr);
@@ -201,6 +209,7 @@ int main() {
     TestCliArgs();
     TestPs4Detection();
     TestMacOsPatcher();
+    TestMetalBridge();
     TestByteIo();
     std::cout << "All Ryty Relinker Unit Tests Passed Successfully!\n";
     return 0;

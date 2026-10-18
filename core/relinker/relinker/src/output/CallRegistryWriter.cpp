@@ -1,22 +1,11 @@
 #include <relinker/output/CallRegistryWriter.hpp>
+#include <io/Json.hpp>
 #include <sstream>
 
 namespace Relinker {
 
 static std::string _jsonString(const std::string& s) {
-    std::string out;
-    out.reserve(s.size() + 2);
-    out.push_back('"');
-    for (char c : s) {
-        if (c == '"') out += "\\\"";
-        else if (c == '\\') out += "\\\\";
-        else if (c == '\n') out += "\\n";
-        else if (c == '\r') out += "\\r";
-        else if (c == '\t') out += "\\t";
-        else out.push_back(c);
-    }
-    out.push_back('"');
-    return out;
+    return '"' + Io::EscapeJsonString(s) + '"';
 }
 
 static std::string _hexOffset(FileByteOffset v) {

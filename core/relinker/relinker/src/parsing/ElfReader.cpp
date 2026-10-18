@@ -1,6 +1,7 @@
 #include <relinker/parsing/ElfReader.hpp>
 #include <relinker/domain/Types.hpp>
 #include <cstring>
+#include <limits>
 
 namespace Relinker {
 
@@ -80,6 +81,12 @@ ElfHeader ElfReader::ReadHeader() const {
         throw RelinkerException("Invalid ELF magic number: " + formatMagic());
     }
 
+    if (_fileBuffer[4] != 2 || _fileBuffer[5] != 1 || _fileBuffer[6] != 1 ||
+        _readU16At(0x12) != 62 || _readU32At(0x14) != 1)
+        throw RelinkerException("Expected little-endian ELF64 x86-64");
+    if (_readU16At(0x34) != 64)
+        throw RelinkerException("Invalid ELF header size", 0x34);
+
     ElfHeader header{};
     header.Machine = _readU16At(0x12);
     header.Type = _readU16At(0x10);
@@ -93,6 +100,17 @@ ElfHeader ElfReader::ReadHeader() const {
     header.SectionHeaderEntrySize = _readU16At(0x3a);
     header.SectionHeaderCount = _readU16At(0x3c);
     header.SectionHeaderStringIndex = _readU16At(0x3e);
+
+    if (header.ProgramHeaderCount != 0 &&
+        (header.ProgramHeaderEntrySize != 56 ||
+         !_rangeFits(header.ProgramHeaderOffset, static_cast<std::uint64_t>(header.ProgramHeaderCount) * header.ProgramHeaderEntrySize, _fileBuffer.size())))
+        throw RelinkerException("Invalid ELF program header table", header.ProgramHeaderOffset);
+    if (header.SectionHeaderCount != 0 &&
+        (header.SectionHeaderEntrySize != 64 ||
+         !_rangeFits(header.SectionHeaderOffset, static_cast<std::uint64_t>(header.SectionHeaderCount) * header.SectionHeaderEntrySize, _fileBuffer.size())))
+        throw RelinkerException("Invalid ELF section header table", header.SectionHeaderOffset);
+    if (header.SectionHeaderStringIndex != 0 && header.SectionHeaderStringIndex >= header.SectionHeaderCount)
+        throw RelinkerException("Invalid ELF section string table index", 0x3e);
 
     return header;
 }
@@ -113,6 +131,11 @@ std::vector<ProgramHeader> ElfReader::ReadProgramHeaders() const {
         ph.FileSize = _readU64At(offset + 0x20);
         ph.MemorySize = _readU64At(offset + 0x28);
         ph.Alignment = _readU64At(offset + 0x30);
+
+        if (ph.Type == 1 &&
+            (!_rangeFits(ph.Offset, ph.FileSize, _fileBuffer.size()) || ph.FileSize > ph.MemorySize ||
+             ph.MemorySize > std::numeric_limits<std::uint64_t>::max() - ph.MappedAddress))
+            throw RelinkerException("Invalid ELF load segment", offset);
 
         headers.push_back(ph);
         offset += header.ProgramHeaderEntrySize;
@@ -176,44 +199,33 @@ std::string ElfReader::_resolveShdrName(std::uint32_t nameOffset, const ElfHeade
 }
 
 std::vector<DynamicTag> ElfReader::ReadDynamicTags(const ProgramHeader& dynamicHeader) const {
+    if (!_rangeFits(dynamicHeader.Offset, dynamicHeader.FileSize, _fileBuffer.size()) || dynamicHeader.FileSize % 16 != 0)
+        throw RelinkerException("Invalid ELF dynamic segment", dynamicHeader.Offset);
     std::vector<DynamicTag> tags;
     FileByteOffset offset = dynamicHeader.Offset;
     const FileByteOffset end = dynamicHeader.Offset + dynamicHeader.FileSize;
 
-    while (offset + 16 <= end && offset + 16 <= _fileBuffer.size()) {
+    while (offset < end) {
         DynamicTag tag;
         tag.Tag = static_cast<std::int64_t>(_readU64At(offset));
         tag.Value = _readU64At(offset + 0x08);
 
         if (tag.Tag == 0) {
-            break;
+            return tags;
         }
 
         tags.push_back(tag);
         offset += 16;
     }
 
-    return tags;
+    throw RelinkerException("Unterminated ELF dynamic segment", dynamicHeader.Offset);
 }
 
 FileByteOffset ElfReader::TranslateVirtualAddress(VirtualAddress address) const {
-    const ElfHeader header = ReadHeader();
-
-    FileByteOffset offset = header.ProgramHeaderOffset;
-
-    for (std::uint16_t i = 0; i < header.ProgramHeaderCount; ++i) {
-        const std::uint32_t type = _readU32At(offset);
-        const FileByteOffset segOffset = _readU64At(offset + 0x08);
-        const VirtualAddress segVAddr = _readU64At(offset + 0x10);
-        const ByteCount segFileSize = _readU64At(offset + 0x20);
-
-        static constexpr std::uint32_t PT_LOAD = 1;
-
-        if (type == PT_LOAD && address >= segVAddr && address < segVAddr + segFileSize) {
-            return segOffset + (address - segVAddr);
+    for (const auto& segment : ReadProgramHeaders()) {
+        if (segment.Type == 1 && address >= segment.MappedAddress && address - segment.MappedAddress < segment.FileSize) {
+            return segment.Offset + (address - segment.MappedAddress);
         }
-
-        offset += header.ProgramHeaderEntrySize;
     }
 
     throw RelinkerException("Virtual address not mapped by any PT_LOAD segment", address);

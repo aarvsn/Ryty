@@ -36,6 +36,11 @@ std::string RelinkerPipeline::_relocationTypeName(std::uint32_t type) {
 
 RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf) {
     auto programHeaders = _elfReader->ReadProgramHeaders();
+    const auto& raw = _elfReader->GetRawBytes();
+    const auto validateRange = [&](const FileByteOffset offset, const ByteCount size, const char* name) {
+        if (offset > raw.size() || size > raw.size() - offset)
+            throw RelinkerException(std::string(name) + " exceeds input file", offset);
+    };
 
     std::vector<std::uint8_t> textSection;
     VirtualAddress textVAddr = 0;
@@ -44,9 +49,12 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
 
     for (const auto& ph : programHeaders) {
         if (ph.Type == PT_LOAD && (ph.Flags & PF_X) != 0) {
-            textSection = _elfReader->ReadSegment(ph);
-            textVAddr = ph.MappedAddress;
-            break;
+            auto code = _elfReader->ReadSegment(ph);
+            _syscallScanner->ScanCodeSectionForSyscalls(code, ph.MappedAddress, code.size());
+            if (textSection.empty()) {
+                textSection = std::move(code);
+                textVAddr = ph.MappedAddress;
+            }
         }
     }
 
@@ -57,9 +65,10 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
         if (ph.Type != PT_DYNAMIC)
             continue;
 
+        if (hasDynamicSegment)
+            throw RelinkerException("Duplicate PT_DYNAMIC segment", ph.Offset);
         hasDynamicSegment = true;
         dynTags = _elfReader->ReadDynamicTags(ph);
-        break;
     }
 
     if (!hasDynamicSegment)
@@ -114,11 +123,13 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
     const ByteCount dynStrSize = readAsSize(DT_OS_STRSZ, DT_STRSZ, "DT_STRSZ");
     if (dynStrSize == 0)
         throw RelinkerException("Invalid DT_STRSZ value");
+    validateRange(dynStrTabOffset, dynStrSize, "Dynamic string table");
 
     const FileByteOffset dynSymTabOffset = readAsOffset(DT_OS_SYMTAB, DT_SYMTAB, "DT_SYMTAB");
     constexpr std::size_t symEntSize = 24;
     if (readAsSize(DT_OS_SYMENT, DT_SYMENT, "DT_SYMENT") != symEntSize)
         throw RelinkerException("Unsupported DT_SYMENT value");
+    validateRange(dynSymTabOffset, symEntSize, "Dynamic symbol table");
 
     FileByteOffset dynJmpRelOffset = 0;
     if (hasPltRelocations) {
@@ -139,6 +150,11 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
     constexpr std::size_t relaEntSize = 24;
     if (readAsSize(DT_OS_RELAENT, DT_RELAENT, "DT_RELAENT") != relaEntSize)
         throw RelinkerException("Unsupported DT_RELAENT value");
+    if (dynRelaSize % relaEntSize != 0)
+        throw RelinkerException("Invalid DT_RELASZ value");
+    validateRange(dynRelaOffset, dynRelaSize, "Relocation table");
+    if (hasPltRelocations)
+        validateRange(dynJmpRelOffset, dynJmpRelSize, "PLT relocation table");
 
     std::vector<std::pair<std::uint64_t, std::string>> neededLibraryNamesByStrOffset;
     for (const auto& tag : dynTags)
@@ -146,12 +162,10 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
             neededLibraryNamesByStrOffset.emplace_back(tag.Value, std::string());
 
     std::vector<NidReference> nidRefs;
-    nidRefs.reserve((dynRelaSize + dynJmpRelSize) / relaEntSize);
+    nidRefs.reserve(dynRelaSize / relaEntSize + dynJmpRelSize / relaEntSize);
     std::vector<std::string> neededLibraries;
     neededLibraries.reserve(neededLibraryNamesByStrOffset.size());
     auto policy = std::dynamic_pointer_cast<ValidationPolicy>(_validationPolicy);
-
-    const std::vector<std::uint8_t>& raw = _elfReader->GetRawBytes();
 
     auto readCStr = [&](FileByteOffset strOff) -> std::string {
         if (strOff >= dynStrSize)
@@ -162,6 +176,8 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
         const FileByteOffset strEnd = dynStrTabOffset + dynStrSize;
         while (pos < raw.size() && pos < strEnd && raw[pos] != 0)
             result.push_back(static_cast<char>(raw[pos++]));
+        if (pos == strEnd)
+            throw RelinkerException("Unterminated dynamic string", dynStrTabOffset + strOff);
         return result;
     };
 
@@ -205,9 +221,10 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
             if ((relType == kRTypeGlobDat || relType == kRTypeJumpSlot) && rOffset % 8 != 0)
                 throw RelinkerException("GOT slot is not 8-byte aligned", pos);
 
-            const FileByteOffset symOff = dynSymTabOffset + static_cast<FileByteOffset>(symIdx) * symEntSize;
-            if (symOff + 4 > raw.size())
-                throw RelinkerException("Symbol table entry out of bounds", symOff);
+            const FileByteOffset symDelta = static_cast<FileByteOffset>(symIdx) * symEntSize;
+            if (symDelta > raw.size() - dynSymTabOffset || symEntSize > raw.size() - dynSymTabOffset - symDelta)
+                throw RelinkerException("Symbol table entry out of bounds", dynSymTabOffset);
+            const FileByteOffset symOff = dynSymTabOffset + symDelta;
 
             std::uint32_t nameOff = 0;
             std::memcpy(&nameOff, raw.data() + symOff, 4);
@@ -221,9 +238,6 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
 
     for (const auto& ref : nidRefs)
         _validationPolicy->ValidateRelocationTypeSupported(ref.RelocationTypeValue, ref.RelocationTableOffset);
-
-    if (!textSection.empty())
-        _syscallScanner->ScanCodeSectionForSyscalls(textSection, textVAddr, textSection.size());
 
     _validationPolicy->ValidateSyscallAbsence();
 

@@ -149,5 +149,25 @@ if(BUILD_TESTING)
     if(APPLE)
         target_link_libraries(relinker_tests PRIVATE ryty_metal)
     endif()
+    if(MSVC)
+        target_compile_options(relinker_tests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(relinker_tests PRIVATE -UNDEBUG)
+    endif()
     add_test(NAME relinker_tests COMMAND relinker_tests)
+
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test_executable(autorun_test_driver
+                tests/AutorunTestDriver.cpp
+                cli/src/Autorun.cpp
+        )
+        target_include_directories(autorun_test_driver PRIVATE cli/include)
+        add_test(NAME cli_integration_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/CliIntegrationTests.py
+                $<TARGET_FILE:ryty> $<TARGET_FILE:autorun_test_driver>)
+        add_test(NAME elf_validation_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/ElfValidationTests.py
+                $<TARGET_FILE:ryty>)
+    endif()
 endif()

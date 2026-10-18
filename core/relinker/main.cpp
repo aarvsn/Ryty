@@ -2,6 +2,7 @@
 #include <domain/Types.hpp>
 #include <io/FileReader.hpp>
 #include <io/FileWriter.hpp>
+#include <io/Json.hpp>
 #include <elfpatcher/linux/LinuxElfPatcher.hpp>
 #include <elfpatcher/macos/MacOsElfPatcher.hpp>
 #include <elfpatcher/general/SegmentFilter.hpp>
@@ -31,25 +32,7 @@
 namespace {
 
 std::string escapeJson(const std::string& value) {
-    std::string result;
-    for (const char character : value) {
-        switch (character) {
-        case '"': result += "\\\""; break;
-        case '\\': result += "\\\\"; break;
-        case '\n': result += "\\n"; break;
-        case '\r': result += "\\r"; break;
-        case '\t': result += "\\t"; break;
-        default:
-            if (static_cast<unsigned char>(character) < 0x20) {
-                std::ostringstream escape;
-                escape << "\\u" << std::hex << static_cast<int>(character);
-                result += escape.str();
-            } else {
-                result += character;
-            }
-        }
-    }
-    return result;
+    return Io::EscapeJsonString(value);
 }
 
 }
