@@ -127,10 +127,49 @@ void TestMacOsPatcher() {
 
     // Load command count: one LC_SEGMENT_64 per PT_LOAD (1) plus seg_tramp,
     // __LINKEDIT, LC_MAIN, LC_LOAD_DYLINKER, LC_BUILD_VERSION, 5 dylibs, LC_RPATH,
-    // LC_UUID, LC_SOURCE_VERSION, LC_SYMTAB, LC_DYSYMTAB.
+    // LC_UUID, LC_SOURCE_VERSION, LC_SYMTAB, LC_DYSYMTAB, LC_CODE_SIGNATURE.
     std::uint32_t cmdsCount = 0;
     std::memcpy(&cmdsCount, patched.data() + 16, 4);
-    assert(cmdsCount == 1 /* PT_LOAD segments */ + 15);
+    assert(cmdsCount == 1 /* PT_LOAD segments */ + 16);
+
+    // The ad-hoc code signature command (LC_CODE_SIGNATURE, 0x1d) must be present
+    // and point at a SuperBlob inside the file.
+    bool haveCodeSignature = false;
+    std::uint32_t signatureOffset = 0, signatureSize = 0;
+    for (std::uint32_t offset = 32; offset + 8 <= 32 + 1024 && offset + 8 <= patched.size();) {
+        std::uint32_t cmd = 0, cmdSize = 0;
+        std::memcpy(&cmd, patched.data() + offset, 4);
+        std::memcpy(&cmdSize, patched.data() + offset + 4, 4);
+        if (cmdSize < 8) break;
+        if (cmd == 0x1d) { // LC_CODE_SIGNATURE
+            std::memcpy(&signatureOffset, patched.data() + offset + 8, 4);
+            std::memcpy(&signatureSize, patched.data() + offset + 12, 4);
+            haveCodeSignature = signatureOffset != 0 && signatureSize >= 20
+                && signatureOffset + signatureSize <= patched.size();
+            break;
+        }
+        offset += cmdSize;
+    }
+    assert(haveCodeSignature);
+    // SuperBlob magic (CSMAGIC_EMBEDDED_SIGNATURE, big endian 0xfade0cc0) and the
+    // ad-hoc CodeDirectory (CSMAGIC_CODEDIRECTORY, 0xfade0c02) must be there.
+    assert(patched[signatureOffset] == 0xfa && patched[signatureOffset + 1] == 0xde
+        && patched[signatureOffset + 2] == 0x0c && patched[signatureOffset + 3] == 0xc0);
+    const std::uint32_t codeDirectoryOffset = (static_cast<std::uint32_t>(patched[signatureOffset + 16]) << 24)
+        | (static_cast<std::uint32_t>(patched[signatureOffset + 17]) << 16)
+        | (static_cast<std::uint32_t>(patched[signatureOffset + 18]) << 8)
+        | static_cast<std::uint32_t>(patched[signatureOffset + 19]);
+    assert(patched[signatureOffset + codeDirectoryOffset] == 0xfa
+        && patched[signatureOffset + codeDirectoryOffset + 1] == 0xde
+        && patched[signatureOffset + codeDirectoryOffset + 2] == 0x0c
+        && patched[signatureOffset + codeDirectoryOffset + 3] == 0x02);
+    // CodeDirectory flags must carry CS_ADHOC (0x2) and the SHA-256 hash type (2).
+    const std::uint32_t codeDirectoryFlags = (static_cast<std::uint32_t>(patched[signatureOffset + codeDirectoryOffset + 12]) << 24)
+        | (static_cast<std::uint32_t>(patched[signatureOffset + codeDirectoryOffset + 13]) << 16)
+        | (static_cast<std::uint32_t>(patched[signatureOffset + codeDirectoryOffset + 14]) << 8)
+        | static_cast<std::uint32_t>(patched[signatureOffset + codeDirectoryOffset + 15]);
+    assert(codeDirectoryFlags == 0x00000002);
+    assert(patched[signatureOffset + codeDirectoryOffset + 37] == 2); // CS_HASHTYPE_SHA256
 
     // The first command must be an executable LC_SEGMENT_64 ("__TEXT")
     // mapped at the guest's own PT_LOAD vaddr (no rebasing).

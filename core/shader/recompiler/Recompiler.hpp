@@ -187,6 +187,16 @@ struct SpirvTarget {
     std::array<std::uint32_t, 3> maxWorkgroupSize;
     std::uint32_t maxWorkgroupInvocations;
     std::uint32_t maxWorkgroupSharedMemoryBytes;
+    // PCI vendor id of the target GPU (0x1002 AMD, 0x10DE NVIDIA, 0x8086 Intel).
+    // Variants key on it, so a cache entry compiled for one vendor never serves
+    // another, and vendor-specific codegen policy can key on it.
+    std::uint32_t vendorId = 0;
+    // VK_EXT_subgroup_size_control (full-subgroup compute) availability on the
+    // target: the driver pins every compute dispatch to subgroupSize, so the
+    // codegen may assume exactly that width regardless of [minSubgroupSize,
+    // maxSubgroupSize].
+    bool subgroupSizeControl = false;
+    std::uint32_t maxSubgroupSize = 0;
     std::optional<MeshTargetLimits> mesh;
     std::optional<TessellationTargetLimits> tessellation;
 };

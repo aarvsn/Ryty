@@ -20,7 +20,7 @@ class CliIntegrationTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def run_ryty(self, nid="test_nid", rpath=None):
+    def run_ryty(self, nid="test_nid", rpath=None, extra=None):
         source = self.root / "input.elf"
         output = self.root / "output.elf"
         report = self.root / "report.json"
@@ -29,10 +29,27 @@ class CliIntegrationTests(unittest.TestCase):
                    "--registry", "--report", str(report)]
         if rpath is not None:
             command += ["--rpath", rpath]
+        if extra:
+            command += extra
         result = subprocess.run(command + [str(source), str(output)],
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return report, self.root / "output.registry.json"
+
+    def test_rytynet_flag_writes_marker_and_report(self):
+        report, _ = self.run_ryty(extra=["--rytynet"])
+        parsed = json.loads(report.read_text(encoding="utf-8"))
+        self.assertTrue(parsed["options"]["rytyNet"])
+        marker = self.root / "output.elf.rytynet"
+        self.assertTrue(marker.exists(), "the RytyNet marker must be written next to the output")
+        self.assertIn("ryty-net/1", marker.read_text(encoding="utf-8"))
+        self.assertTrue(any("experimental" in warning for warning in parsed["warnings"]))
+
+    def test_without_rytynet_flag_no_marker_is_written(self):
+        report, _ = self.run_ryty()
+        parsed = json.loads(report.read_text(encoding="utf-8"))
+        self.assertFalse(parsed["options"]["rytyNet"])
+        self.assertFalse((self.root / "output.elf.rytynet").exists())
 
     def test_report_round_trips_every_control_character(self):
         rpath = "libs/" + "".join(chr(value) for value in range(1, 32)) + '"\\ café'

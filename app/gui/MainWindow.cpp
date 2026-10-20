@@ -90,6 +90,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     _lazyBinding = makeCheck("Lazy PLT binding", false, 2, 3);
     _registry = makeCheck("Write call registry JSON", false, 3, 0);
     _autorun = makeCheck("Launch after porting", false, 3, 1);
+    _rytyNet = makeCheck("RytyNet online mode (experimental)", false, 3, 2);
     layout->addWidget(Group("Porting options", optionsGrid));
 
     auto* logLayout = new QVBoxLayout;
@@ -164,6 +165,7 @@ QStringList MainWindow::BuildArguments() const {
     if (_skipSyscallCheck->isChecked()) arguments << "--skip-syscall-check";
     if (_lazyBinding->isChecked()) arguments << "--lazy-binding";
     if (_registry->isChecked()) arguments << "--registry";
+    if (_rytyNet->isChecked()) arguments << "--rytynet";
     if (!_reportPath->text().trimmed().isEmpty())
         arguments << "--report" << _reportPath->text().trimmed();
     arguments << "unused-filter=" + QString::number(_unusedFilter->currentIndex());

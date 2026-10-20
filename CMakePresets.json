@@ -49,6 +49,16 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
+        },
+        {
+            "name": "macos-release",
+            "inherits": "base",
+            "displayName": "macOS release (CLI + tests + GUI when Qt6 is present)",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -63,6 +73,10 @@
         {
             "name": "windows-release",
             "configurePreset": "windows-release"
+        },
+        {
+            "name": "macos-release",
+            "configurePreset": "macos-release"
         }
     ],
     "testPresets": [
@@ -83,6 +97,13 @@
         {
             "name": "windows-release",
             "configurePreset": "windows-release",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "macos-release",
+            "configurePreset": "macos-release",
             "output": {
                 "outputOnFailure": true
             }

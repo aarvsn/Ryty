@@ -329,7 +329,7 @@ std::vector<std::uint8_t> makeSourceVersionCommand() {
     auto* cmd = reinterpret_cast<SourceVersionCommand*>(buf.data());
     cmd->Cmd = LC_SOURCE_VERSION;
     cmd->CmdSize = sizeof(SourceVersionCommand);
-    cmd->Version = 0x0001000000060000ULL; // 1.0.6.0
+    cmd->Version = 0x0001000000070000ULL; // 1.0.7.0
     return buf;
 }
 
@@ -365,6 +365,97 @@ std::vector<std::uint8_t> makeCodeSignatureCommand(std::uint32_t offset, std::ui
     return buf;
 }
 
+// ---- Ad-hoc code signing ----------------------------------------------------
+//
+// macOS refuses to execute completely unsigned binaries (SIGKILL "Code Signature
+// Invalid"), so the writer embeds an ad-hoc SuperBlob: a CodeDirectory whose
+// per-page SHA-256 hashes are computed over the finished image (everything up
+// to the signature itself). This mirrors what `codesign -s -` produces for the
+// subset of slots the kernel checks on launch (code directory only, no
+// requirements, entitlements or CMS data).
+
+// SHA-256 (FIPS 180-4), self-contained so the patcher stays toolchain-neutral.
+struct Sha256 {
+    std::uint32_t state[8];
+    std::uint64_t bits;
+    std::uint8_t block[64];
+    std::size_t used;
+
+    Sha256() : state{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19}, bits(0), used(0) {}
+
+    static std::uint32_t rotr(std::uint32_t value, std::uint32_t count) { return (value >> count) | (value << (32 - count)); }
+
+    void compress(const std::uint8_t* chunk) {
+        static constexpr std::uint32_t K[64] = {
+            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+        std::uint32_t w[64];
+        for (std::uint32_t i = 0; i < 16; ++i) {
+            w[i] = (static_cast<std::uint32_t>(chunk[i * 4]) << 24) | (static_cast<std::uint32_t>(chunk[i * 4 + 1]) << 16)
+                 | (static_cast<std::uint32_t>(chunk[i * 4 + 2]) << 8) | static_cast<std::uint32_t>(chunk[i * 4 + 3]);
+        }
+        for (std::uint32_t i = 16; i < 64; ++i) {
+            const std::uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            const std::uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+        std::uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+        std::uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+        for (std::uint32_t i = 0; i < 64; ++i) {
+            const std::uint32_t s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            const std::uint32_t ch = (e & f) ^ (~e & g);
+            const std::uint32_t t1 = h + s1 + ch + K[i] + w[i];
+            const std::uint32_t s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            const std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            const std::uint32_t t2 = s0 + maj;
+            h = g; g = f; f = e; e = d + t1;
+            d = c; c = b; b = a; a = t1 + t2;
+        }
+        state[0] += a; state[1] += b; state[2] += c; state[3] += d;
+        state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+    }
+
+    void update(const std::uint8_t* data, std::size_t size) {
+        bits += static_cast<std::uint64_t>(size) * 8;
+        while (size > 0) {
+            const std::size_t take = std::min(size, sizeof(block) - used);
+            std::memcpy(block + used, data, take);
+            used += take;
+            data += take;
+            size -= take;
+            if (used == sizeof(block)) {
+                compress(block);
+                used = 0;
+            }
+        }
+    }
+
+    void finish(std::uint8_t digest[32]) {
+        const std::uint64_t totalBits = bits;
+        const std::uint8_t pad = 0x80;
+        update(&pad, 1);
+        const std::uint8_t zero = 0;
+        while (used != 56) update(&zero, 1);
+        std::uint8_t length[8];
+        for (std::uint32_t i = 0; i < 8; ++i) length[i] = static_cast<std::uint8_t>((totalBits >> (56 - i * 8)) & 0xff);
+        std::memcpy(block + 56, length, 8);
+        compress(block);
+        used = 0;
+        for (std::uint32_t i = 0; i < 8; ++i) {
+            digest[i * 4] = static_cast<std::uint8_t>((state[i] >> 24) & 0xff);
+            digest[i * 4 + 1] = static_cast<std::uint8_t>((state[i] >> 16) & 0xff);
+            digest[i * 4 + 2] = static_cast<std::uint8_t>((state[i] >> 8) & 0xff);
+            digest[i * 4 + 3] = static_cast<std::uint8_t>(state[i] & 0xff);
+        }
+    }
+};
+
 static void writeBe32(std::vector<std::uint8_t>& buf, std::size_t offset, std::uint32_t val) {
     buf[offset] = static_cast<std::uint8_t>((val >> 24) & 0xff);
     buf[offset + 1] = static_cast<std::uint8_t>((val >> 16) & 0xff);
@@ -372,13 +463,32 @@ static void writeBe32(std::vector<std::uint8_t>& buf, std::size_t offset, std::u
     buf[offset + 3] = static_cast<std::uint8_t>(val & 0xff);
 }
 
-std::vector<std::uint8_t> makeAdHocCodeSignatureBlob(std::size_t binarySize) {
-    const std::string identifier = "ryty.bundle";
+static void writeBe64(std::vector<std::uint8_t>& buf, std::size_t offset, std::uint64_t val) {
+    writeBe32(buf, offset, static_cast<std::uint32_t>(val >> 32));
+    writeBe32(buf, offset + 4, static_cast<std::uint32_t>(val & 0xffffffffu));
+}
+
+// Size (in bytes) the CodeDirectory occupies for `binarySize` hashed bytes.
+// CodeDirectory v0x20400 (88-byte header, SHA-256 page hashes) + identifier.
+constexpr std::uint32_t CodeDirectoryHeaderSize = 88;
+constexpr std::uint32_t CodeDirectoryHashSize = 32;
+
+std::uint32_t adHocSignatureSize(std::size_t binarySize, std::size_t identifierLength) {
     const std::uint32_t nCodeSlots = static_cast<std::uint32_t>((binarySize + 4095) / 4096);
-    const std::uint32_t codeDirHeaderSize = 44;
-    const std::uint32_t hashOffset = codeDirHeaderSize + static_cast<std::uint32_t>(identifier.size()) + 1;
-    const std::uint32_t hashSize = 20; // SHA-1 dummy hash
-    const std::uint32_t codeDirTotalSize = hashOffset + nCodeSlots * hashSize;
+    const std::uint32_t codeDirectorySize = CodeDirectoryHeaderSize + static_cast<std::uint32_t>(identifierLength) + 1
+        + nCodeSlots * CodeDirectoryHashSize;
+    // SuperBlob: magic + length + count, one BlobIndex entry.
+    return 12 + 8 + codeDirectorySize;
+}
+
+// Builds the ad-hoc SuperBlob over `image[0, binarySize)`. `binarySize` must be
+// the file offset the signature itself is placed at (codeLimit), and the
+// identifier the bundle name recorded in the CodeDirectory.
+std::vector<std::uint8_t> makeAdHocCodeSignatureBlob(const std::uint8_t* image, std::size_t binarySize, const std::string& identifier) {
+    const std::uint32_t nCodeSlots = static_cast<std::uint32_t>((binarySize + 4095) / 4096);
+    const std::uint32_t identOffset = CodeDirectoryHeaderSize;
+    const std::uint32_t hashOffset = identOffset + static_cast<std::uint32_t>(identifier.size()) + 1;
+    const std::uint32_t codeDirTotalSize = hashOffset + nCodeSlots * CodeDirectoryHashSize;
 
     const std::uint32_t superBlobHeaderSize = 12;
     const std::uint32_t blobIndexSize = 8;
@@ -386,34 +496,53 @@ std::vector<std::uint8_t> makeAdHocCodeSignatureBlob(std::size_t binarySize) {
 
     std::vector<std::uint8_t> blob(totalBlobSize, 0);
 
-    // SuperBlob Header (big endian)
+    // SuperBlob header (big endian)
     writeBe32(blob, 0, 0xfade0cc0); // CSMAGIC_EMBEDDED_SIGNATURE
     writeBe32(blob, 4, totalBlobSize);
     writeBe32(blob, 8, 1); // count = 1
 
     // BlobIndex[0]
-    writeBe32(blob, 12, 0); // type = CS_CSSLOT_CODEDIRECTORY
+    writeBe32(blob, 12, 0); // type = CSSLOT_CODEDIRECTORY
     writeBe32(blob, 16, superBlobHeaderSize + blobIndexSize); // offset to CodeDirectory
 
-    // CodeDirectory Header
+    // CodeDirectory (version 0x20400: 88-byte header with exec-segment fields)
     const std::size_t cdOff = superBlobHeaderSize + blobIndexSize;
     writeBe32(blob, cdOff, 0xfade0c02); // CSMAGIC_CODEDIRECTORY
     writeBe32(blob, cdOff + 4, codeDirTotalSize);
-    writeBe32(blob, cdOff + 8, 0x00020400); // version
+    writeBe32(blob, cdOff + 8, 0x00020400); // version (supports SHA-256 + exec seg)
     writeBe32(blob, cdOff + 12, 0x00000002); // flags = CS_ADHOC
     writeBe32(blob, cdOff + 16, hashOffset);
-    writeBe32(blob, cdOff + 20, codeDirHeaderSize);
+    writeBe32(blob, cdOff + 20, identOffset);
     writeBe32(blob, cdOff + 24, 0); // nSpecialSlots
     writeBe32(blob, cdOff + 28, nCodeSlots);
     writeBe32(blob, cdOff + 32, static_cast<std::uint32_t>(binarySize)); // codeLimit
-    blob[cdOff + 36] = hashSize; // hashSize
-    blob[cdOff + 37] = 1; // hashType = CS_HASHTYPE_SHA1
+    blob[cdOff + 36] = CodeDirectoryHashSize; // hashSize (SHA-256)
+    blob[cdOff + 37] = 2; // hashType = CS_HASHTYPE_SHA256
     blob[cdOff + 38] = 0; // platform
     blob[cdOff + 39] = 12; // pageSize (2^12 = 4096)
-    writeBe32(blob, cdOff + 40, 0); // spare1
+    writeBe32(blob, cdOff + 40, 0); // spare2
+    writeBe32(blob, cdOff + 44, 0); // scatterOffset (unused)
+    writeBe32(blob, cdOff + 48, 0); // teamIDOffset (none)
+    writeBe32(blob, cdOff + 52, 0); // spare3
+    // Version 0x20400 extended fields are 64-bit wide.
+    writeBe64(blob, cdOff + 56, binarySize); // codeLimit64
+    writeBe64(blob, cdOff + 64, 0);          // execSegBase (first executable page)
+    writeBe64(blob, cdOff + 72, binarySize); // execSegLimit
+    writeBe64(blob, cdOff + 80, 0x00000001); // execSegFlags = CS_EXECSEG_MAIN_BINARY
 
-    // Copy identifier
-    std::memcpy(blob.data() + cdOff + codeDirHeaderSize, identifier.c_str(), identifier.size() + 1);
+    // Identifier
+    std::memcpy(blob.data() + cdOff + identOffset, identifier.c_str(), identifier.size() + 1);
+
+    // Page hashes: SHA-256 over every 4096-byte page of [0, binarySize). The
+    // final partial page is hashed over the bytes it actually has.
+    std::uint8_t* hashes = blob.data() + cdOff + hashOffset;
+    for (std::uint32_t slot = 0; slot < nCodeSlots; ++slot) {
+        const std::size_t pageStart = static_cast<std::size_t>(slot) * 4096;
+        const std::size_t pageBytes = std::min<std::size_t>(4096, binarySize - pageStart);
+        Sha256 hasher;
+        hasher.update(image + pageStart, pageBytes);
+        hasher.finish(hashes + slot * CodeDirectoryHashSize);
+    }
 
     return blob;
 }
@@ -675,17 +804,28 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     const auto uuidCmd = makeUuidCommand(sourceElf);
     const auto sourceVerCmd = makeSourceVersionCommand();
 
+    // ---- Ad-hoc code signature layout ----
+    // The SuperBlob is placed page-aligned after the symbol/string tables, inside
+    // __LINKEDIT (the codesign convention). The CodeDirectory hashes every byte of
+    // the file in front of it, so its position and size must be fixed before the
+    // load commands are written; the hashes themselves are computed over the
+    // finished image after assembly.
+    const std::string signatureIdentifier = "ryty.bundle";
+    const std::uint32_t signatureCommandCount = 1; // LC_CODE_SIGNATURE
+
     // ---- Compute load command sizes and the page-aligned payload position ----
     const std::uint32_t cmdsCount = static_cast<std::uint32_t>(segs.size() + 2 /*tramp,linkedit*/ + 1 /*main*/
         + 1 /*dylinker*/ + 1 /*buildver*/ + 5 /*dylibs*/ + 1 /*rpath*/
-        + 1 /*uuid*/ + 1 /*sourcever*/ + 1 /*symtab*/ + 1 /*dysymtab*/);
+        + 1 /*uuid*/ + 1 /*sourcever*/ + 1 /*symtab*/ + 1 /*dysymtab*/
+        + signatureCommandCount);
     const std::uint64_t cmdsSizeWithoutSyms = sizeof(SegmentCommand64) * (segs.size() + 2)
         + (haveExec ? sizeof(Section64) : 0)
         + sizeof(MainCommand)
         + dylinkerCmd.size() + buildVerCmd.size()
         + metalLibCmd.size() + metalKitLibCmd.size() + cocoaLibCmd.size()
         + quartzCoreLibCmd.size() + libSystemCmd.size() + rpathCmd.size()
-        + uuidCmd.size() + sourceVerCmd.size();
+        + uuidCmd.size() + sourceVerCmd.size()
+        + sizeof(LinkeditDataCommand) /* LC_CODE_SIGNATURE */;
     const std::uint64_t cmdsSize = cmdsSizeWithoutSyms + sizeof(SymtabCommand) + sizeof(DysymtabCommand);
     const std::uint64_t headerAll = sizeof(MachOHeader64) + cmdsSize;
     const std::uint64_t payloadFileOff = (headerAll + PageMask) & ~PageMask; // page-aligned file position of the ELF
@@ -712,10 +852,14 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     const std::uint32_t symTabBytes = nSyms * sizeof(Nlist64);
     const std::uint32_t strTabOffset = symTabOffset + symTabBytes;
     const std::uint32_t strTabBytes = static_cast<std::uint32_t>(strTable.size());
-    const std::uint64_t linkeditDataSize = symTabBytes + strTabBytes;
+    const std::uint64_t symstrBytes = static_cast<std::uint64_t>(symTabBytes) + strTabBytes;
+    const std::uint64_t signatureFileOff = (linkeditFileOff + symstrBytes + PageMask) & ~PageMask;
+    const std::uint32_t signatureSize = adHocSignatureSize(signatureFileOff, signatureIdentifier.size());
+    const std::uint64_t linkeditDataSize = (signatureFileOff - linkeditFileOff) + signatureSize;
 
     const auto symtabCmd = makeSymtabCommand(symTabOffset, nSyms, strTabOffset, strTabBytes);
     const auto dysymtabCmd = makeDysymtabCommand(nSyms);
+    const auto codeSignatureCmd = makeCodeSignatureCommand(static_cast<std::uint32_t>(signatureFileOff), signatureSize);
 
     // ---- Entry point ----
     std::uint64_t entryoff = 0;
@@ -855,6 +999,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     appendBytes(quartzCoreLibCmd.data(), quartzCoreLibCmd.size());
     appendBytes(libSystemCmd.data(), libSystemCmd.size());
     appendBytes(rpathCmd.data(), rpathCmd.size());
+    appendBytes(codeSignatureCmd.data(), codeSignatureCmd.size());
 
     // ---- File data: payload, synthetic images, trampolines, symbol table ----
     padTo(payloadFileOff);
@@ -874,6 +1019,16 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         appendBytes(strTable.data(), strTable.size());
     }
 
+    // ---- Ad-hoc code signature over the finished image ----
+    // Everything in front of the signature (header, load commands, segments,
+    // trampolines, symbol and string tables) is hashed page by page.
+    padTo(signatureFileOff);
+    if (result.size() != signatureFileOff) throw std::runtime_error("macOS writer: signature offset does not match the assembled image");
+    const auto signature = makeAdHocCodeSignatureBlob(result.data(), signatureFileOff, signatureIdentifier);
+    appendBytes(signature.data(), signature.size());
+
+    std::cerr << "[ryty] ad-hoc code signature: offset=0x" << std::hex << signatureFileOff
+              << " size=0x" << signatureSize << " pages=" << ((signatureFileOff + 4095) / 4096) << std::dec << "\n";
     std::cerr << "[ryty] e_entry=0x" << std::hex << e_entry << " entryoff=0x" << entryoff
               << std::dec << " | total size " << result.size() << " bytes\n";
     return result;

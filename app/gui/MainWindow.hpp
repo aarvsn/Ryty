@@ -50,6 +50,7 @@ private:
     QCheckBox* _registry = nullptr;
     QCheckBox* _writeReport = nullptr;
     QCheckBox* _autorun = nullptr;
+    QCheckBox* _rytyNet = nullptr;
     QPushButton* _runButton = nullptr;
     QTextEdit* _log = nullptr;
     QLabel* _status = nullptr;

@@ -33,6 +33,18 @@ if(Qt6_FOUND)
                 COMMENT "Deploying Qt6 runtime libraries for Windows GUI..."
             )
         endif()
+    elseif(APPLE)
+        find_program(MACDEPLOYQT_EXECUTABLE NAMES macdeployqt HINTS ${Qt6_DIR}/../../../bin)
+        if(MACDEPLOYQT_EXECUTABLE)
+            # Bundle the Qt6 frameworks into ryty-gui.app so the GUI is a
+            # self-contained .app (ad-hoc signed, like the CLI output).
+            add_custom_command(TARGET ryty-gui POST_BUILD
+                COMMAND ${MACDEPLOYQT_EXECUTABLE} "$<TARGET_BUNDLE_DIR:ryty-gui>" -no-strip -codesign=-
+                COMMENT "Deploying Qt6 frameworks for macOS GUI bundle (ad-hoc signed)..."
+            )
+        else()
+            message(STATUS "macdeployqt not found; ryty-gui.app will not bundle the Qt6 runtime")
+        endif()
     elseif(UNIX AND NOT APPLE)
         add_custom_command(TARGET ryty-gui POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ryty-gui>/plugins/platforms"

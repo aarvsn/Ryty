@@ -8,6 +8,7 @@
 #include <spirv/unified1/spirv.hpp>
 #include <algorithm>
 #include <bit>
+#include <cstdio>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -246,6 +247,19 @@ std::vector<std::uint32_t> SpirvEmitter::Emit(const IrProgram& program, const Sh
     state.spirvVersion = target.spirvVersion;
     state.supportedCapabilities = target.supportedCapabilities;
     state.supportedExtensions = target.supportedExtensions;
+    // Vendor-aware module annotations: every emitted variant records the GPU
+    // vendor (and the pinned subgroup configuration) it was generated for, so
+    // spirv-dis output and tooling can tell vendor-specific variants apart.
+    {
+        char vendorAnnotation[40];
+        std::snprintf(vendorAnnotation, sizeof(vendorAnnotation), "ryty-target-vendor:%06x", target.vendorId);
+        state.module.EmitModuleProcessed(vendorAnnotation);
+        if (target.subgroupSizeControl) {
+            char pinAnnotation[56];
+            std::snprintf(pinAnnotation, sizeof(pinAnnotation), "ryty-subgroup-pin:%u-max%u", target.subgroupSize, target.maxSubgroupSize);
+            state.module.EmitModuleProcessed(pinAnnotation);
+        }
+    }
     const auto* workgroup = ShaderWorkgroupInputFor(state);
     state.laneCount = workgroup != nullptr && program.WaveSize() == 64u && workgroup->hostSubgroupSize == 32u ? 2u : 1u;
     if (program.Resources().stage == IrShaderStage::Compute && workgroup != nullptr) {

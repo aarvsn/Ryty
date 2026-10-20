@@ -16,7 +16,8 @@ nonzero exit code; nothing is silently approximated.
 | Option | Effect |
 | ------ | ------ |
 | `--windows` | Produce a Windows PE executable instead of a Linux ELF. |
-| `--macos` | Produce an experimental macOS Mach-O executable with Metal graphics API support. |
+| `--macos` | Produce an experimental macOS Mach-O executable with Metal graphics API support. Since 1.0.7 the output carries an ad-hoc code signature (SHA-256 CodeDirectory) so it launches without `codesign`. |
+| `--rytynet` | Experimental: enable the RytyNet online-mode bridge for this port. Writes an `<output>.rytynet` marker, records `"rytyNet": true` in the report and adds an experimental warning. See [RytyNet](RYTNET.md). |
 | `--ps4` | Treat input executable as a PlayStation 4 game binary. |
 | `--ps5` | Treat input executable as a PlayStation 5 game binary. |
 | `--console <auto\|ps4\|ps5>` | Console platform selection (default `auto`). |
@@ -86,3 +87,6 @@ still work so that previously configured setups keep running:
 | `RTY_SHADER_CACHE_DIR`, `RTY_NO_SHADER_CACHE` | Shader disk cache location / disable switch. |
 | `RTY_ENTITLEMENTS` | Entitlement data ini override. |
 | `RTY_FMOD_SILENT`, `RTY_FMOD_NOSOUND` | Audio fallback switches used by the FMOD compatibility layer. |
+| `RTY_NET_ENABLE=1` | Experimental: activate the RytyNet online-mode bridge (see [RytyNet](RYTNET.md)). `0` forces it off. |
+| `RTY_NET_LOG=1` | Log RytyNet decisions and requests to stderr (`[rytynet]` lines). |
+| `RTY_GPU_VENDOR`, `RTY_GPU_INDEX` | GPU selection overrides for mixed-GPU systems (see [GPU support](../dev/GPU_SUPPORT.md)). |

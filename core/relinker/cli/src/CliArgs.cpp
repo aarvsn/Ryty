@@ -69,6 +69,8 @@ Args ParseArgs(int argc, char* argv[]) {
             args.windowsDiagnostics = true;
         } else if (arg == "--windows-gui") {
             args.windowsGui = true;
+        } else if (arg == "--rytynet") {
+            args.rytyNet = true;
         } else if (arg.rfind("--", 0) == 0 || arg == "unused-filter") {
             throw std::runtime_error("unknown option: " + arg);
         } else if (args.inputPath.empty()) {
@@ -94,7 +96,7 @@ Args ParseArgs(int argc, char* argv[]) {
 
     if (args.inputPath.empty() || args.outputPath.empty())
         throw std::runtime_error(
-            "Usage: ryty [--windows|--macos] [--ps4|--ps5|--console auto|ps4|ps5] [--windows-diagnostics] [--windows-gui] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>] [--lazy-binding] [--autorun] <input.elf> <output.elf>\n"
+            "Usage: ryty [--windows|--macos] [--ps4|--ps5|--console auto|ps4|ps5] [--windows-diagnostics] [--windows-gui] [--rytynet] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>] [--lazy-binding] [--autorun] <input.elf> <output.elf>\n"
             "Example: ryty input.elf output.elf"
         );
 

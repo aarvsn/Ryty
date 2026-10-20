@@ -556,9 +556,14 @@ void writeSpirvTarget(Writer& writer, const SpirvTarget& target) {
     if (target.tessellation.has_value()) {
         writeTessellationTargetLimits(writer, *target.tessellation);
     }
+    // Version 6: vendor identity and the pinned subgroup width (per-vendor
+    // variants and cache separation).
+    writer.WriteU32(target.vendorId);
+    writer.WriteBool(target.subgroupSizeControl);
+    writer.WriteU32(target.maxSubgroupSize);
 }
 
-SpirvTarget readSpirvTarget(Reader& reader, DeserializedRequest& result) {
+SpirvTarget readSpirvTarget(Reader& reader, DeserializedRequest& result, std::uint32_t version) {
     SpirvTarget target{};
     target.vulkanVersion = reader.ReadU32();
     target.spirvVersion = reader.ReadU32();
@@ -588,6 +593,11 @@ SpirvTarget readSpirvTarget(Reader& reader, DeserializedRequest& result) {
     if (reader.ReadBool()) {
         result.tessellation = readTessellationTargetLimits(reader);
         target.tessellation = result.tessellation;
+    }
+    if (version >= 6u) {
+        target.vendorId = reader.ReadU32();
+        target.subgroupSizeControl = reader.ReadBool();
+        target.maxSubgroupSize = reader.ReadU32();
     }
     return target;
 }
@@ -677,7 +687,7 @@ std::string RequestSerializer::Serialize(const RecompileRequest& request) const 
     std::string buffer;
     Writer writer(buffer);
     writer.WriteU32(0x41505335u);
-    writer.WriteU32(5u);
+    writer.WriteU32(6u);
     writeShaderBinary(writer, request.shader);
     writeGuestContext(writer, request.context);
     writeSpirvTarget(writer, request.target);
@@ -700,11 +710,11 @@ DeserializedRequest RequestSerializer::Deserialize(std::string_view text) const 
     Reader reader(decoded);
     if (reader.ReadU32() != 0x41505335u) throw std::runtime_error("invalid recompile request signature");
     const auto version = reader.ReadU32();
-    if (version < 1u || version > 5u) throw std::runtime_error("unsupported recompile request serialization version");
+    if (version < 1u || version > 6u) throw std::runtime_error("unsupported recompile request serialization version");
     DeserializedRequest result{};
     result.request.shader = readShaderBinary(reader, result.shaderCode, result.shaderHeader);
     result.request.context = readGuestContext(reader, result, version);
-    result.request.target = readSpirvTarget(reader, result);
+    result.request.target = readSpirvTarget(reader, result, version);
     result.request.layout = readBindingLayout(reader);
     if (reader.ReadBool()) {
         result.graphicsStorage = std::make_unique<DeserializedGraphicsCompileContext>();

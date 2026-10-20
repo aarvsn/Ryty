@@ -96,6 +96,7 @@ int main(const int argc, char* argv[]) {
 
         std::cout << "Console: " << consoleTargetStr << "; System: " << (args.toMacOs ? "macOS" : (args.toWindows ? "Windows" : "Linux")) << "; unused-filter=" << args.unusedFilterLevel << "\n";
         std::cout << "sce_module/sce_modules processing: " << (args.skipSceModule ? "disabled (--skip-sce-module)" : "enabled") << '\n';
+        if (args.rytyNet) std::cout << "RytyNet online mode: enabled (experimental)\n";
         for (const auto& name : args.excludedSceModules) std::cout << "sce_module excluded: " << name << '\n';
         auto result = pipeline->Relink(sourceBytes);
         for (const auto& patch : result.Patches) {
@@ -142,6 +143,15 @@ int main(const int argc, char* argv[]) {
         }
         fileWriter.Write(absPath, executableBytes);
         std::cout << "External prx references: " << result.RegistryEntries.size() << "\nOutput file: " << absPath << '\n';
+        if (args.rytyNet) {
+            const std::filesystem::path outFs(absPath);
+            const std::string markerPath = (outFs.parent_path() / (outFs.filename().string() + ".rytynet")).string();
+            fileWriter.Write(markerPath, "ryty-net/1 experimental online mode\n");
+            std::cout << "WARNING: RytyNet is experimental. The online-mode bridge was enabled for this port;\n"
+                      << "the runtime activates it when this marker exists or RTY_NET_ENABLE=1 is set.\n"
+                      << "RytyNet marker: " << markerPath << '\n';
+            warnings.push_back("RytyNet online mode is experimental");
+        }
         std::cout << "Expected runtime layout (relative to the output executable):\n"
                   << std::filesystem::path(absPath).filename().string() << "\n"
                   << "libs/\n    *.prx\napp0/\n    <game resources>\n";
@@ -166,6 +176,7 @@ int main(const int argc, char* argv[]) {
             report << "    \"skipSceModule\": " << (args.skipSceModule ? "true" : "false") << ",\n";
             report << "    \"skipSyscallCheck\": " << (args.skipSyscallCheck ? "true" : "false") << ",\n";
             report << "    \"lazyBinding\": " << (args.lazyBinding ? "true" : "false") << ",\n";
+            report << "    \"rytyNet\": " << (args.rytyNet ? "true" : "false") << ",\n";
             report << "    \"rpath\": \"" << escapeJson(args.runPath) << "\"\n";
             report << "  },\n";
             report << "  \"intelSubstitutions\": [\n";

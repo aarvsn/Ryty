@@ -57,6 +57,65 @@ void require(bool condition, const char* reason) {
     if (!condition) throw std::runtime_error(std::string("Vulkan presentation: ") + reason);
 }
 
+// ---- GPU vendors -----------------------------------------------------------
+// The driver is vendor-agnostic (every requirement is queried before use), but
+// selection and codegen policy know the PCI vendor ids so mixed-GPU systems pick
+// the right device and per-vendor shader variants stay separated.
+constexpr std::uint32_t VendorIdAmd = 0x1002;
+constexpr std::uint32_t VendorIdNvidia = 0x10DE;
+constexpr std::uint32_t VendorIdIntel = 0x8086;
+constexpr std::uint32_t VendorIdApple = 0x106B;
+
+const char* VendorName(std::uint32_t vendorId) {
+    switch (vendorId) {
+    case VendorIdAmd: return "AMD";
+    case VendorIdNvidia: return "NVIDIA";
+    case VendorIdIntel: return "Intel";
+    case VendorIdApple: return "Apple";
+    default: return "unknown";
+    }
+}
+
+// Fallbacks for toolchains whose Vulkan headers predate
+// VK_EXT_subgroup_size_control (promoted to Vulkan 1.2 core); the structure
+// layouts and structure types are fixed by the registry. The extension-name
+// macro is the reliable preprocessor probe: the structure type constants are
+// enumerators, which #ifdef cannot see.
+#ifdef VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME
+using SubgroupSizeControlFeatures = VkPhysicalDeviceSubgroupSizeControlFeaturesEXT;
+using SubgroupSizeControlProperties = VkPhysicalDeviceSubgroupSizeControlPropertiesEXT;
+// Promoted to core as ...CreateInfo (the registry's ...Info alias is the KHR name).
+using RequiredSubgroupSizeInfo = VkPipelineShaderStageRequiredSubgroupSizeCreateInfo;
+constexpr VkStructureType RequiredSubgroupSizeInfoSType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO;
+#else
+#pragma message("Vulkan headers predate VK_EXT_subgroup_size_control; using registry fallback definitions")
+#ifndef VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME
+#define VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME "VK_EXT_subgroup_size_control"
+#endif
+struct SubgroupSizeControlFeatures {
+    VkStructureType sType;
+    const void* pNext;
+    VkBool32 subgroupSizeControl;
+    VkBool32 computeFullSubgroups;
+};
+struct SubgroupSizeControlProperties {
+    VkStructureType sType;
+    const void* pNext;
+    std::uint32_t minSubgroupSize;
+    std::uint32_t maxSubgroupSize;
+    std::uint32_t maxComputeWorkgroupSubgroups;
+    std::uint32_t requiredSubgroupSizeStages;
+};
+struct RequiredSubgroupSizeInfo {
+    VkStructureType sType;
+    const void* pNext;
+    std::uint32_t requiredSubgroupSize;
+};
+constexpr VkStructureType VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES_EXT = static_cast<VkStructureType>(1000225002);
+constexpr VkStructureType VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES_EXT = static_cast<VkStructureType>(1000225001);
+constexpr VkStructureType RequiredSubgroupSizeInfoSType = static_cast<VkStructureType>(1000225003);
+#endif
+
 // The ShaderResources content cache dispatches share with recorded draws: Graphics::ResourceCache,
 // one process-wide instance (see SharedResourceCache) that the State references so this file keeps
 // its Find/Insert/Remove/Clear calls; the device clears it at teardown before its descriptor caches
@@ -197,6 +256,13 @@ struct VulkanDevice::State {
     bool textureCompressionBC = false;
     // VK_KHR_timeline_semaphore enabled: the recorder's unlocked waits are available.
     bool timelineSemaphores = false;
+    // VK_EXT_subgroup_size_control enabled with full-subgroup compute: compute
+    // pipelines pin the required subgroup size to the width the recompiler laid
+    // programs out for (Target().subgroupSize). Mandatory on NVIDIA, whose
+    // driver would otherwise be free to schedule other widths.
+    bool subgroupSizeControl = false;
+    std::uint32_t minSubgroupSize = 0;
+    std::uint32_t maxSubgroupSize = 0;
     // Indirect draw features enabled (see Graphics::Context).
     bool drawIndirectFirstInstance = false;
     bool multiDrawIndirect = false;
@@ -601,14 +667,47 @@ VulkanDevice::VulkanDevice(const PresentationWindow* window) : state(std::make_u
     std::vector<VkPhysicalDevice> devices(count);
     check(enumerate(state->instance, &count, devices.data()), "vkEnumeratePhysicalDevices");
     devices.resize(count);
-    VkPhysicalDevice selected = VK_NULL_HANDLE;
-    std::uint32_t family = 0;
+    // Vendor-aware selection: every capable candidate is scored and the best one
+    // wins. Discrete GPUs outrank integrated ones (a laptop with an NVIDIA dGPU
+    // and an Intel iGPU used to take whichever the ICD enumerated first); ties
+    // keep the enumeration order. RTY_GPU_INDEX=<n> pins the 0-based candidate
+    // from the eligible list for explicit control (and RTY_GPU_VENDOR=<amd|nvidia|intel>
+    // restricts the eligible list by PCI vendor).
+    std::uint32_t forcedVendor = 0;
+    if (const char* vendorOverride = std::getenv("RTY_GPU_VENDOR")) {
+        const std::string_view name = vendorOverride;
+        if (name == "amd" || name == "AMD") forcedVendor = VendorIdAmd;
+        else if (name == "nvidia" || name == "NVIDIA" || name == "nv" || name == "NV") forcedVendor = VendorIdNvidia;
+        else if (name == "intel" || name == "Intel") forcedVendor = VendorIdIntel;
+        else std::fprintf(stderr, "[gpu] RTY_GPU_VENDOR=%s is not one of amd|nvidia|intel; ignored\n", vendorOverride);
+    }
+    long gpuIndexOverride = -1;
+    if (const char* indexOverride = std::getenv("RTY_GPU_INDEX")) {
+        const std::string text(indexOverride);
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), gpuIndexOverride);
+        if (parsed.ec != std::errc() || gpuIndexOverride < 0) {
+            std::fprintf(stderr, "[gpu] RTY_GPU_INDEX=%s is not a zero-based device index; ignored\n", indexOverride);
+            gpuIndexOverride = -1;
+        }
+    }
+    struct DeviceCandidate {
+        VkPhysicalDevice physical;
+        std::uint32_t family;
+        std::uint32_t score;
+        std::uint32_t vendorId;
+        std::uint32_t deviceType;
+        char name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+    };
+    std::vector<DeviceCandidate> candidates;
     const std::array<const char*, 1> presentationExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     for (auto physical : devices) {
         VkPhysicalDeviceProperties properties{};
         state->InstanceFunction<PFN_vkGetPhysicalDeviceProperties>("vkGetPhysicalDeviceProperties")(physical, &properties);
-        APS5_LOG_OUT("Physical device candidate=%p name=%s api=0x%x", reinterpret_cast<void*>(physical), properties.deviceName, properties.apiVersion);
+        APS5_LOG_OUT("Physical device candidate=%p name=%s vendor=%s(0x%x) device=0x%x type=%u api=0x%x", reinterpret_cast<void*>(physical), properties.deviceName, VendorName(properties.vendorID), properties.vendorID, properties.deviceID, properties.deviceType, properties.apiVersion);
         if (properties.apiVersion < VK_API_VERSION_1_1) {
+            continue;
+        }
+        if (forcedVendor != 0 && properties.vendorID != forcedVendor) {
             continue;
         }
         if (window != nullptr) {
@@ -634,17 +733,42 @@ VulkanDevice::VulkanDevice(const PresentationWindow* window) : state(std::make_u
                     check(state->InstanceFunction<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>("vkGetPhysicalDeviceSurfaceSupportKHR")(physical, i, state->surface, &supported), "vkGetPhysicalDeviceSurfaceSupportKHR");
                     if (!supported) continue;
                 }
-                selected = physical;
-                family = i;
+                // Score: discrete over integrated over the rest, with a small
+                // bonus for the wider subgroup support the recompiler prefers.
+                std::uint32_t score = 0;
+                if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score = 4;
+                else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score = 2;
+                else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU) score = 1;
+                candidates.push_back(DeviceCandidate{physical, i, score, properties.vendorID, properties.deviceType, {}});
+                std::snprintf(candidates.back().name, sizeof(candidates.back().name), "%s", properties.deviceName);
                 break;
             }
         }
-        if (selected != VK_NULL_HANDLE) {
-            break;
-        }
     }
-    if (selected == VK_NULL_HANDLE) {
+    if (candidates.empty()) {
         throw std::runtime_error(window ? "Vulkan: no Vulkan 1.1 device with graphics, compute and swapchain presentation" : "Vulkan: no Vulkan 1.1 graphics and compute queue");
+    }
+    VkPhysicalDevice selected = VK_NULL_HANDLE;
+    std::uint32_t family = 0;
+    if (gpuIndexOverride >= 0) {
+        if (static_cast<std::size_t>(gpuIndexOverride) >= candidates.size()) {
+            throw std::runtime_error("RTY_GPU_INDEX=" + std::to_string(gpuIndexOverride) + " is beyond the " + std::to_string(candidates.size()) + " eligible Vulkan device(s)");
+        }
+        selected = candidates[static_cast<std::size_t>(gpuIndexOverride)].physical;
+        family = candidates[static_cast<std::size_t>(gpuIndexOverride)].family;
+        std::fprintf(stderr, "[gpu] RTY_GPU_INDEX=%ld selected name=%s vendor=%s\n", gpuIndexOverride, candidates[static_cast<std::size_t>(gpuIndexOverride)].name, VendorName(candidates[static_cast<std::size_t>(gpuIndexOverride)].vendorId));
+    } else {
+        const DeviceCandidate* best = &candidates.front();
+        for (const auto& candidate : candidates) {
+            if (candidate.score > best->score) best = &candidate;
+        }
+        selected = best->physical;
+        family = best->family;
+        if (candidates.size() > 1) {
+            for (const auto& candidate : candidates) {
+                std::fprintf(stderr, "[gpu] candidate name=%s vendor=%s type=%u score=%u%s\n", candidate.name, VendorName(candidate.vendorId), candidate.deviceType, candidate.score, &candidate == best ? " (selected)" : "");
+            }
+        }
     }
     APS5_LOG_OUT("Physical device selected physical=%p queueFamily=%u", reinterpret_cast<void*>(selected), family);
     VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
@@ -657,7 +781,7 @@ VulkanDevice::VulkanDevice(const PresentationWindow* window) : state(std::make_u
         if ((state->subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0) state->capabilities.push_back(spv::CapabilityGroupNonUniformBallot);
         if ((state->subgroup.supportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_BIT) != 0) state->capabilities.push_back(spv::CapabilityGroupNonUniformShuffle);
     }
-    APS5_LOG_OUT("Selected GPU name=%s vendor=0x%x device=0x%x subgroup=%u", state->properties.deviceName, state->properties.vendorID, state->properties.deviceID, state->subgroup.subgroupSize);
+    APS5_LOG_OUT("Selected GPU name=%s vendor=%s (0x%x) device=0x%x subgroup=%u", state->properties.deviceName, VendorName(state->properties.vendorID), state->properties.vendorID, state->properties.deviceID, state->subgroup.subgroupSize);
     state->InstanceFunction<PFN_vkGetPhysicalDeviceMemoryProperties>("vkGetPhysicalDeviceMemoryProperties")(selected, &state->memoryProperties);
     for (std::uint32_t i = 0; i < state->memoryProperties.memoryHeapCount; ++i) APS5_LOG_OUT("Memory heap %u size=%.1f MiB flags=0x%x", i, state->memoryProperties.memoryHeaps[i].size / 1048576.0, state->memoryProperties.memoryHeaps[i].flags);
     for (std::uint32_t i = 0; i < state->memoryProperties.memoryTypeCount; ++i) APS5_LOG_OUT("Memory type %u heap=%u flags=0x%x", i, state->memoryProperties.memoryTypes[i].heapIndex, state->memoryProperties.memoryTypes[i].propertyFlags);
@@ -885,6 +1009,38 @@ VulkanDevice::VulkanDevice(const PresentationWindow* window) : state(std::make_u
         byteFeatures.pNext = &timelineFeatures;
     } else {
         std::fprintf(stderr, "[gpu] timeline semaphores unavailable or disabled; drains wait under the GPU mutex\n");
+    }
+    // VK_EXT_subgroup_size_control (Vulkan 1.2 core): pin every compute stage's
+    // required subgroup size to the width the recompiler laid the program out
+    // for (Target().subgroupSize). The wave64-on-32-lane workgroup splitting and
+    // the subgroup ops of the emitted SPIR-V are only valid at that width, so
+    // once the extension is advertised the driver must not be free to schedule
+    // other widths. This is what makes NVIDIA (always 32 lanes) deterministic,
+    // and it keeps AMD's variable-size scheduling honest too. Debug aid:
+    // APS5_NO_SUBGROUP_PIN=1 leaves the extension off entirely.
+    VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroupSizeControlFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES_EXT};
+    if (hasExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME) && std::getenv("APS5_NO_SUBGROUP_PIN") == nullptr) {
+        VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &subgroupSizeControlFeatures};
+        state->InstanceFunction<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(selected, &features);
+        state->subgroupSizeControl = subgroupSizeControlFeatures.subgroupSizeControl == VK_TRUE && subgroupSizeControlFeatures.computeFullSubgroups == VK_TRUE;
+    }
+    subgroupSizeControlFeatures = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES_EXT};
+    subgroupSizeControlFeatures.subgroupSizeControl = VK_TRUE;
+    subgroupSizeControlFeatures.computeFullSubgroups = VK_TRUE;
+    if (state->subgroupSizeControl) {
+        VkPhysicalDeviceSubgroupSizeControlPropertiesEXT sizeProperties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES_EXT};
+        VkPhysicalDeviceProperties2 sizeProperties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &sizeProperties};
+        state->InstanceFunction<PFN_vkGetPhysicalDeviceProperties2>("vkGetPhysicalDeviceProperties2")(selected, &sizeProperties2);
+        state->minSubgroupSize = sizeProperties.minSubgroupSize;
+        state->maxSubgroupSize = sizeProperties.maxSubgroupSize;
+        deviceExtensions.push_back(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
+        deviceInfo.enabledExtensionCount = static_cast<std::uint32_t>(deviceExtensions.size());
+        deviceInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        subgroupSizeControlFeatures.pNext = byteFeatures.pNext;
+        byteFeatures.pNext = &subgroupSizeControlFeatures;
+        std::fprintf(stderr, "[gpu] %s: subgroup size control enabled (pinned widths %u..%u; codegen assumes %u)\n", VendorName(state->properties.vendorID), state->minSubgroupSize, state->maxSubgroupSize, state->subgroup.subgroupSize);
+    } else {
+        std::fprintf(stderr, "[gpu] subgroup size control unavailable or disabled; dispatches run at the driver's default width\n");
     }
     bdaFeatures.pNext = &byteFeatures;
     deviceInfo.pNext = &bdaFeatures;
@@ -2145,6 +2301,12 @@ ShaderRecompiler::SpirvTarget VulkanDevice::Target() const {
     const auto& limits = state->properties.limits;
     ShaderRecompiler::SpirvTarget target{VK_API_VERSION_1_1, state->meshShader ? 0x00010400u : 0x00010300u, state->subgroup.subgroupSize, ShaderRecompiler::BdaAbi::Version, state->capabilities, state->spirvExtensions, false, {limits.maxComputeWorkGroupSize[0], limits.maxComputeWorkGroupSize[1], limits.maxComputeWorkGroupSize[2]}, limits.maxComputeWorkGroupInvocations, limits.maxComputeSharedMemorySize, {}, {}};
     target.fragmentShaderBarycentricEnabled = state->fragmentShaderBarycentric;
+    // Vendor identity rides with every recompile request: the emitted variants
+    // key on it (per-vendor codegen policy and cache separation), and the module
+    // preamble records it for vendor-specific debugging.
+    target.vendorId = state->properties.vendorID;
+    target.subgroupSizeControl = state->subgroupSizeControl;
+    target.maxSubgroupSize = state->subgroupSizeControl ? state->maxSubgroupSize : state->subgroup.subgroupSize;
     if (state->meshShader) {
         const auto& mesh = state->meshLimits;
         target.mesh = ShaderRecompiler::MeshTargetLimits{{mesh.maxMeshWorkGroupSize[0], mesh.maxMeshWorkGroupSize[1], mesh.maxMeshWorkGroupSize[2]}, mesh.maxMeshWorkGroupInvocations, std::min(mesh.maxMeshSharedMemorySize, mesh.maxMeshPayloadAndSharedMemorySize), mesh.maxMeshOutputVertices, mesh.maxMeshOutputPrimitives, mesh.maxMeshOutputComponents, std::min(mesh.maxMeshOutputMemorySize, mesh.maxMeshPayloadAndOutputMemorySize), mesh.meshOutputPerVertexGranularity, mesh.meshOutputPerPrimitiveGranularity};
@@ -2193,6 +2355,10 @@ Graphics::Context VulkanDevice::buildContext() const {
         state->hostImportAlignment
     };
     context.recorder = state->recorder.get();
+    context.vendorId = state->properties.vendorID;
+    context.subgroupSizeControl = state->subgroupSizeControl;
+    context.minSubgroupSize = state->minSubgroupSize;
+    context.maxSubgroupSize = state->maxSubgroupSize;
     context.descriptorCache = state->descriptorCache.get();
     context.samplerCache = state->samplerCache.get();
     context.drawIndirectFirstInstance = state->drawIndirectFirstInstance;
@@ -3214,6 +3380,17 @@ VulkanDevice::IndirectOutcome VulkanDevice::dispatch(const ShaderRecompiler::Rec
         pipelineInfo.stage.module = objects->module;
         pipelineInfo.stage.pName = "main";
         pipelineInfo.layout = objects->layout;
+        // Pin the dispatch width to the size the recompiler laid this program out
+        // for (see Target() and the VK_EXT_subgroup_size_control setup). Without
+        // the pin a driver scheduling a different width would break the wave
+        // splitting and the subgroup-scope SPIR-V; with it every dispatch runs at
+        // exactly the codegen width.
+        RequiredSubgroupSizeInfo requiredSubgroupSize{RequiredSubgroupSizeInfoSType};
+        static const bool noSubgroupPin = std::getenv("APS5_NO_SUBGROUP_PIN") != nullptr;
+        if (state->subgroupSizeControl && !noSubgroupPin && state->subgroup.subgroupSize >= state->minSubgroupSize && state->subgroup.subgroupSize <= state->maxSubgroupSize) {
+            requiredSubgroupSize.requiredSubgroupSize = state->subgroup.subgroupSize;
+            pipelineInfo.stage.pNext = &requiredSubgroupSize;
+        }
         if (profile && shader.spirv.size() > 100000) std::fprintf(stderr, "[dispatch] creating a pipeline for %zu SPIR-V words (program 0x%llx)\n", shader.spirv.size(), static_cast<unsigned long long>(programAddress));
         check(state->DeviceFunction<PFN_vkCreateComputePipelines>("vkCreateComputePipelines")(state->device, context.pipelineCache, 1, &pipelineInfo, nullptr, &objects->pipeline), "vkCreateComputePipelines");
         timing.Mark("pipeline_create");

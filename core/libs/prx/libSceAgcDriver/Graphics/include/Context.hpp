@@ -131,6 +131,16 @@ struct Context {
     bool descriptorIndexing = false;
     bool primitiveListRestart = false;
     bool imageViewMinLod = false;
+    // PCI vendor id of the device (0x1002 AMD, 0x10DE NVIDIA, 0x8086 Intel);
+    // mirrors SpirvTarget::vendorId so vendor-aware caches and policies agree.
+    std::uint32_t vendorId = 0;
+    // VK_EXT_subgroup_size_control (full-subgroup compute) enabled: compute
+    // pipelines pin the required subgroup size within [minSubgroupSize,
+    // maxSubgroupSize] so dispatches always run at the width the recompiler
+    // assumed (see SpirvTarget::subgroupSize).
+    bool subgroupSizeControl = false;
+    std::uint32_t minSubgroupSize = 0;
+    std::uint32_t maxSubgroupSize = 0;
 
     template<typename TFunction>
     TFunction Function(const char* name) const {

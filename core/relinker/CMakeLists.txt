@@ -169,5 +169,8 @@ if(BUILD_TESTING)
         add_test(NAME elf_validation_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/ElfValidationTests.py
                 $<TARGET_FILE:ryty>)
+        add_test(NAME macos_signature_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/MacOsSignatureTests.py
+                $<TARGET_FILE:ryty>)
     endif()
 endif()

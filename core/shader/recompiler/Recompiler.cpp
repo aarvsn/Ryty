@@ -307,6 +307,9 @@ CompiledVariant compileVariant(const RecompileRequest& request, IrProgram progra
     targetOptions.bdaAbiVersion = request.target.bdaAbiVersion;
     targetOptions.supportedCapabilities = request.target.supportedCapabilities;
     targetOptions.supportedExtensions = request.target.supportedExtensions;
+    targetOptions.vendorId = request.target.vendorId;
+    targetOptions.subgroupSizeControl = request.target.subgroupSizeControl;
+    targetOptions.maxSubgroupSize = request.target.maxSubgroupSize;
 
     constexpr SpirvEmitter spirvEmitter;
     RecompileResult result;

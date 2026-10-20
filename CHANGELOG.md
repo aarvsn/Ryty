@@ -1,119 +1,84 @@
 # Changelog
 
-All notable changes to Ryty are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Releases before 1.0.7 predate this file; their history lives in the commit
+log and the existing documentation.
 
-## [1.0.6] - 2026-10-08
+## 1.0.7
 
-### Enhanced
-- **macOS Porting Backend & Mach-O Generation**: Extended Mach-O patcher (`MacOsElfPatcher`) with `LC_UUID` (deterministic 128-bit binary UUID generation), `LC_SOURCE_VERSION` (1.0.6.0), and `LC_SYMTAB` / `LC_DYSYMTAB` symbol table generation (`nlist_64` entries for entry points and trampoline stubs) to enable binary introspection, `lldb` debugging, and symbolication on macOS.
-- **Metal Graphics API Extensions**: Expanded Metal graphics renderer bridge (`RytyMetalRenderer`) with additional C API rendering pipeline controls: `RytyMetalSetCullMode`, `RytyMetalSetTriangleFillMode`, `RytyMetalSetFrontFacingWinding`, `RytyMetalSetDepthBias`, `RytyMetalSetStencilReferenceValue`, `RytyMetalSetRenderPipelineState`, `RytyMetalSetComputePipelineState`, `RytyMetalDispatchThreadgroups`, and `RytyMetalSetSamplerState`.
-- **System PRX Library Enhancements**: Merged new system PRX functionality across `libkernel`, `libScePad`, and `libSceVideoOut` (`sceKernelSetGameBudget`, `sceKernelGetDirectMemorySize`, `sceKernelIsDevelopmentKit`, `sceKernelGetProcessTimeCounter`, `scePadSetVibration`, `scePadSetLightBar`, `sceVideoOutGetOutputMode`).
+### Increased macOS support
 
-## [1.0.5] - 2026-10-07
+* Ports made with `--macos` now carry a real **ad-hoc code signature**: the
+  writer embeds a `LC_CODE_SIGNATURE` SuperBlob with a CodeDirectory v0x20400
+  whose SHA-256 hashes cover every 4096-byte page of the finished image
+  (previously the blob helpers existed but were never attached, and unsigned
+  Mach-O executables are killed by the kernel on launch). `LC_SOURCE_VERSION`
+  reports 1.0.7.0.
+* The signature structure and every page hash are validated on every platform
+  by the new `macos_signature_tests` ctest (parses the SuperBlob and compares
+  against an independent SHA-256).
+* New `macos-release` CMake preset; SDL on Apple now configures the
+  Cocoa/Metal video path (X11/Wayland off instead of the Linux defaults);
+  the GUI runs `macdeployqt -codesign=-` when available so `ryty-gui.app`
+  bundles the Qt frameworks with an ad-hoc signature.
+* Guest `sce_module` PRXs stay runtime-loaded ELF objects by design; the
+  rationale and the path to Mach-O modules are documented in the technical
+  debt list.
+* CI gained a **macos** job (macos-14: build, full ctest, CLI zip) alongside
+  linux, windows and linux-cli.
 
-### Fixed
-- **macOS Mach-O Patcher CI**: Fixed type ambiguity in `MacOsElfPatcher.cpp` page alignment mask calculation (`PageMask`) ensuring template argument deduction for `std::max` succeeds across all 64-bit platforms.
+### NVIDIA GPU support
 
-### Enhanced
-- **Shader Recompiler Constant Folding**: Expanded `ConstantFolder` to support floating-point 32-bit constant folding and identity simplifications (`FPAdd32`, `FPSub32`, `FPMul32`, `FPFma32`, `FPNeg32`, `FPAbs32`, `FPSaturate32`, `FPMin32`, `FPMax32`, `FPSqrt`) for PS5 shader translation optimizations.
+* **Vendor-aware physical device selection**: candidates are scored (discrete
+  over integrated over virtual) instead of taking the ICD's first match, with
+  per-candidate logging. `RTY_GPU_VENDOR` and `RTY_GPU_INDEX` control mixed-GPU
+  systems; out-of-range index requests fail with a clear message.
+* **Subgroup sizes are pinned**: `VK_EXT_subgroup_size_control` (Vulkan 1.2
+  core) is enabled when advertised, and every compute pipeline pins
+  `requiredSubgroupSize` to the width the recompiler generated for. This makes
+  the wave32/64 emulation deterministic on NVIDIA (always 32 lanes) and keeps
+  variable-width schedulers honest elsewhere. `APS5_NO_SUBGROUP_PIN=1` opts
+  out.
+* **Per-vendor shader variants**: `SpirvTarget` now carries the PCI vendor id
+  and the pinned subgroup configuration; the recompile cache key, the
+  serialized request format (v6, backward compatible read) and the module
+  preamble (`OpModuleProcessed` `ryty-target-vendor:...`) key and label every
+  variant, so a cache directory can be shared across machines without a
+  variant compiled for one vendor serving another.
+* Vendor support matrix, requirements and controls are documented in
+  [GPU support](docs/dev/GPU_SUPPORT.md).
 
-## [1.0.4] - 2026-10-06
+### RytyNet (experimental online mode)
 
-### Enhanced
-- **macOS Mach-O Patcher**: Expanded Mach-O generator (`MacOsElfPatcher`) with `LC_BUILD_VERSION` (target macOS platform 1, SDK 14.0, min OS 11.0), `LC_LOAD_DYLINKER` (`/usr/lib/dyld`), multi-segment mapping (`__TEXT` and `__DATA`), and ad-hoc code signature generation (`LC_CODE_SIGNATURE` with `CS_SuperBlob` and `CSMAGIC_CODEDIRECTORY`) for modern macOS and Apple Silicon / Rosetta dyld compliance.
-- **macOS Metal Graphics Bridge & View Host**: Added Metal 2D texture creation and data streaming (`RytyMetalCreateTexture2D`, `RytyMetalUpdateTexture2D`, `RytyMetalDestroyTexture2D`), buffer management (`RytyMetalCreateBuffer`, `RytyMetalUpdateBuffer`, `RytyMetalDestroyBuffer`), viewport (`RytyMetalSetViewport`), scissor rectangle (`RytyMetalSetScissorRect`), blend mode options (`RytyMetalSetBlendMode`), primitive draw calls (`RytyMetalDrawPrimitives`, `RytyMetalDrawIndexedPrimitives`), and threadgroup capability queries (`RytyMetalGetMaxThreadsPerThreadgroup`).
-- **macOS Metal Host C++ API**: Extended `Ryty::MacOs::MetalViewHost` with helper methods and C API wrappers for texture allocation, data uploads, and viewport configuration.
+* New runtime module **libRytyNet** implementing the online-mode bridge:
+  a blocking HTTP/1.1 client over the host's TCP stack (status line, headers,
+  Content-Length and chunked responses), and the enablement policy.
+* **libSceHttp** routes `sceHttpSendRequest`/`sceHttpReadData`/
+  `sceHttpGetStatusCode`/`sceHttpGetAllResponseHeaders` through the bridge
+  when enabled; request headers, URLs and bodies are captured from the
+  existing create/add-header calls. Without the bridge the library keeps its
+  previous offline behaviour byte for byte.
+* **libSceNpManager** reports the user as signed in with the local identity
+  `RytyPlayer` while the bridge is active (state, online id, NpId, account
+  id/country/age/language, reachability), so titles that stall while signed
+  out can reach their menus. No PSN service is behind it.
+* Opt-in from three places: `RTY_NET_ENABLE=1` at runtime, `ryty --rytynet`
+  at port time (writes an `<output>.rytynet` marker, records `"rytyNet"` in
+  the JSON report, adds an experimental warning), and the GUI's
+  "RytyNet online mode (experimental)" checkbox.
+* Diagnostics: `RTY_NET_LOG=1` logging, `RytyNetIsEnabled`/`RytyNetVersion`/
+  `RytyNetGetStatus`/`RytyNetSetEnabled` exports. HTTPS, HTTP/2, proxies,
+  keep-alive and UDP P2P are explicitly not part of this release and are
+  listed in [RytyNet](docs/user/RYTNET.md).
 
-## [1.0.3] - 2026-10-05
+### GUI
 
-### Fixed
-- **macOS Mach-O Patcher**: Fixed entry stub generation to properly jump to guest entry point, restored Intel instruction lowering (`--to-intel`) trampoline stub emission for macOS binaries, and added missing `QuartzCore.framework` dylib loading command.
-- **macOS Guest Module Resolution**: Extended `GuestModuleBuilder` to support `@executable_path` and `@loader_path` rpath prefixes on macOS targets.
-- **Windows Packaging & Missing DLLs**: Enhanced Windows CI packaging (`CI.yml`) with dynamic multi-pass `ldd` dependency resolution to automatically discover and bundle all required UCRT64/MinGW runtime DLLs (e.g. `libdouble-conversion.dll`, `libpcre2-16-0.dll`, `libbrotlicommon.dll`, `libbrotlidedec.dll`, `libzstd.dll`, etc.) alongside `windeployqt`.
+* Version 1.0.7; new experimental RytyNet checkbox that passes `--rytynet`.
 
-### Enhanced
-- **macOS Metal Graphics Bridge**: Added pipeline depth/stencil state setup (`MTLPixelFormatDepth32Float`), depth texture allocation support, alpha blending pipeline configuration (`MTLBlendFactorSourceAlpha`), view host configuration functions, and C API extensions (`RytyMetalSetDepthStencilEnabled`).
+### Infrastructure
 
-### Optimized
-- **Relinker & IO Memory Allocation**: Pre-allocated container capacities and optimized vector reservations in `MacOsElfPatcher`, `RelinkerPipeline`, `GuestModuleBuilder`, and `ByteWriter` routines.
-
-## [1.0.2] - 2026-10-04
-
-### Added
-- **Enhanced macOS & Metal Porting**: Expanded Mach-O bundle structure generation (`LC_LOAD_DYLIB`, `LC_RPATH`) in `MacOsElfPatcher` and enhanced Metal graphics bridge (`RytyMetalRenderer`, `RytyMetalView`) with pipeline state setup, render pass encoder configuration, viewport management, and device queries.
-- **Porting Pipeline Enhancements**: Improved JSON report metadata, expanded CLI arguments, and improved guest module relocation handling.
-
-### Fixed
-- **Windows Qt6 Missing Files**: Fixed issue where Windows builds missed required Qt6 platform plugins (e.g. `platforms/qwindows.dll`) and deployment DLLs by passing target directory and deployment parameters to `windeployqt6` / `windeployqt` in CMake and CI workflow.
-
-### Optimized
-- **Buffer & Memory Allocation**: Fast-path vector reservation and capacity pre-allocations across I/O writers, ELF patchers, dependency stub builders, and instruction scanning routines.
-
-## [1.0.1] - 2026-10-03
-
-### Added
-- **PlayStation 4 game support**: Auto-detection and explicit console selection (`--ps4`, `--ps5`, `--console auto|ps4|ps5`) in CLI and GUI to support porting PlayStation 4 executables.
-- **Experimental macOS support**: Experimental target system (`--macos` / `--target macos`) with Mach-O binary emission (`MacOsElfPatcher`), Objective-C (`.m`) and Objective-C++ (`.mm`) runtime support, and Apple's Metal graphics renderer bridge (`RytyMetalRenderer`, `RytyMetalView`).
-- **Target System in GUI**: Added "macOS (Mach-O / Metal, experimental)" to the Qt6 GUI launcher.
-
-### Optimized
-- **Instruction Scanner**: Fast-path prefix filtering for AMD64-only instruction scanning, skipping non-AMD instructions in bulk.
-- **Memory allocations & lookups**: Pre-allocated container capacities and optimized lookup indexes in `ControlFlowGraph`, `GotAccessIndex`, `CacheKey`, and I/O buffer routines (`ByteReader`, `ByteWriter`).
-
-## [1.0.0] - 2026-10-03
-
-Ryty 1.0 is the first release of the fork of AnyPS5. It keeps the upstream
-relinker architecture and PRX library set while adding the changes below.
-
-### Added
-
-- Qt6 GUI launcher (`app/gui`, target `ryty-gui`) for Linux and Windows with
-  input/output pickers, target-system switch, every CLI option, live colored
-  log and an optional JSON report toggle. Builds only when Qt6 is found and
-  is skipped gracefully otherwise.
-- Single-file CI (`.github/workflows/CI.yml`): Linux and Windows jobs plus a
-  CLI-only job. The Linux job publishes a self-contained GUI AppImage with
-  the Qt6 runtime embedded (linuxdeploy + linuxdeploy-plugin-qt); the Windows
-  job ships the GUI with the full windeployqt6 DLL/plugin set.
-- `--report <file>` flag: JSON porting report with options, per-site
-  instruction substitutions, summary counters and warnings.
-- Instruction-lowering coverage for the complete AMD SHA extension set:
-  SHA1RNDS4 (all four imm8 round groups), SHA1NEXTE, SHA1MSG1, SHA1MSG2,
-  SHA256RNDS2, SHA256MSG1 and SHA256MSG2, each lowered to SSE2-only stubs.
-- Instruction-lowering coverage for RDPRU (zero-returning trampoline),
-  MCOMMIT (nop), RDPID including REX.B (register zeroing), PREFETCHW
-  (PREFETCHT0 rewrite) and FEMMS (EMMS rewrite).
-- Short-site sequence absorption: in-place-lowerable instructions and RDPRU
-  can be absorbed into a neighbouring stub so sites shorter than a relative
-  jump still port.
-- `ShaLoweringVerificationTests`: executes every generated SHA stub and
-  compares it against the hardware SHA-NI instruction (360,360 assertions;
-  falls back to pure C reference models on hosts without SHA-NI).
-- CMake presets (`linux-release`, `linux-release-cli`, `windows-release`) and
-  link-time optimization for release builds.
-- Open-source project files: CI workflow, issue/PR templates, this
-  changelog, code of conduct, security policy, author list, editor and
-  formatting configuration.
-
-### Changed
-
-- Project rebranded from AnyPS5 to Ryty: CLI target `ryty`, `ryty-input.ini`,
-  `ryty-entitlements.ini`, `RTY_*` environment variables and CMake options.
-  Legacy `ANYPS5_*` environment variables keep working at runtime.
-- Level-1 NID filtering is resilient: when CFG/GOT analysis cannot run
-  (missing entry points, analysis failure), the filter keeps every reference
-  and warns instead of aborting the port.
-- Dynamic string reads are bounded: names are limited to `DT_STRSZ`
-  (dynamic strings) and to the section size (section header string table).
-- GOT slots for GLOB_DAT/JUMP_SLOT relocations must be 8-byte aligned;
-  misaligned slots fail the port with a precise offset instead of producing
-  a broken binary.
-
-### Fixed
-
-- SHA opcode classification: SHA1 and SHA256 message/round opcodes
-  (`0F 38 C8`..`0F 38 CD`, `0F 3A CC`) are decoded by escape map and
-  operation; previously SHA-1 family instructions were not lowered and a
-  memory-operand or prefixed variant could abort the port.
+* `.github/workflows/CI.yml` recreated with a **macos** leg (build + full
+  ctest + CLI zip) in addition to linux, windows and linux-cli, and release
+  zips for all three desktop platforms.
+* Documentation: new [RytyNet](docs/user/RYTNET.md) and
+  [GPU support](docs/dev/GPU_SUPPORT.md) pages; BUILDING, USAGE,
+  COMPATIBILITY, CI and the technical debt list updated.

@@ -47,6 +47,12 @@ void SpirvModule::EmitExtension(const std::string& extensionName) {
     }
 }
 
+void SpirvModule::EmitModuleProcessed(const std::string& text) {
+    std::vector<std::uint32_t> operands;
+    appendString(operands, text);
+    appendInstruction(debug, spv::OpModuleProcessed, operands);
+}
+
 void SpirvModule::EmitEntryPoint(std::uint32_t executionModel, std::uint32_t entryPointId, const std::string& entryPointName, const std::vector<std::uint32_t>& interfaceIds) {
     std::vector<std::uint32_t> operands;
     appendOperands(operands, executionModel, entryPointId);

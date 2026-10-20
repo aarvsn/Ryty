@@ -197,6 +197,12 @@ private:
         append(key, value.maxWorkgroupSize);
         append(key, value.maxWorkgroupInvocations);
         append(key, value.maxWorkgroupSharedMemoryBytes);
+        // Vendor identity and the pinned subgroup width: variants generated for
+        // one GPU vendor (or one subgroup-control configuration) must never serve
+        // another, so shared cache directories stay correct across machines.
+        append(key, value.vendorId);
+        append(key, value.subgroupSizeControl);
+        append(key, value.maxSubgroupSize);
         append(key, value.mesh);
         append(key, value.tessellation);
     }

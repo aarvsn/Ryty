@@ -87,6 +87,11 @@ foreach(LIB_DIR ${LIBS_DIRS})
         else()
             target_link_libraries(${LIB_NAME} PRIVATE libkernel libc)
         endif()
+        # The RytyNet online-mode bridge (experimental): libSceHttp sends its
+        # requests through it and libSceNpManager reports its online state.
+        if(LIB_NAME STREQUAL "libSceHttp" OR LIB_NAME STREQUAL "libSceNpManager")
+            target_link_libraries(${LIB_NAME} PRIVATE libRytyNet)
+        endif()
         if(WIN32 AND LIB_NAME STREQUAL "libSceNet")
             target_link_libraries(${LIB_NAME} PRIVATE ws2_32)
             target_compile_definitions(${LIB_NAME} PRIVATE _WIN32_WINNT=0x0602)

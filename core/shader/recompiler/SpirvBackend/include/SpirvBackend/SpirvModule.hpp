@@ -30,6 +30,9 @@ public:
     [[nodiscard]] std::uint32_t AllocateId();
     void EmitCapability(std::uint32_t capability);
     void EmitExtension(const std::string& extensionName);
+    // Adds an OpModuleProcessed debug record; SPIR-V tools ignore it, but it
+    // marks vendor- or target-specific variants in the module for debugging.
+    void EmitModuleProcessed(const std::string& text);
     void EmitEntryPoint(std::uint32_t executionModel, std::uint32_t entryPointId, const std::string& entryPointName, const std::vector<std::uint32_t>& interfaceIds);
     void EmitTypeDeclaration(std::vector<std::uint32_t> words);
     void EmitGlobalVariable(std::vector<std::uint32_t> words);

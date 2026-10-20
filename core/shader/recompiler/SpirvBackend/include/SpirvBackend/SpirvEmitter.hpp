@@ -18,6 +18,12 @@ struct SpirvTargetOptions {
     std::uint32_t bdaAbiVersion;
     std::span<const std::uint32_t> supportedCapabilities;
     std::span<const std::string_view> supportedExtensions;
+    // PCI vendor id of the target GPU and the pinned subgroup width it offers
+    // (see SpirvTarget); the module preamble records both so SPIR-V tooling can
+    // tell vendor-specific variants apart.
+    std::uint32_t vendorId = 0;
+    bool subgroupSizeControl = false;
+    std::uint32_t maxSubgroupSize = 0;
 };
 
 class SpirvEmitter {
