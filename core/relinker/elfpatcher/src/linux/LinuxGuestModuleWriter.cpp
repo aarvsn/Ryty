@@ -62,8 +62,8 @@ std::vector<std::uint8_t> GuestModuleWriter::WriteLinux(const Relinker::GuestIma
     bytes.insert(bytes.end(), image.Dynamic.RelaData.begin(), image.Dynamic.RelaData.end());
     const auto pltAddress = address();
     bytes.insert(bytes.end(), image.Dynamic.RelaPltData.begin(), image.Dynamic.RelaPltData.end());
-    const auto lifecycle = [&](std::uint64_t target) {
-        if (target == 0) return std::uint64_t{};
+    const auto lifecycle = [&](bool present, std::uint64_t target) {
+        if (!present) return std::uint64_t{};
         const auto start = address();
         bytes.insert(bytes.end(), {0x31, 0xff, 0x31, 0xf6, 0x31, 0xd2, 0xe9});
         const auto displacement = static_cast<std::int64_t>(target) - static_cast<std::int64_t>(address() + 4);
@@ -71,8 +71,8 @@ std::vector<std::uint8_t> GuestModuleWriter::WriteLinux(const Relinker::GuestIma
         Io::AppendU32(bytes, static_cast<std::uint32_t>(displacement));
         return start;
     };
-    const auto init = lifecycle(image.Init);
-    const auto fini = lifecycle(image.Fini);
+    const auto init = lifecycle(image.HasInit, image.Init);
+    const auto fini = lifecycle(image.HasFini, image.Fini);
     Io::AlignBuffer(bytes, 8);
     const auto dynamicOffset = bytes.size();
     const auto dynamicAddress = address();

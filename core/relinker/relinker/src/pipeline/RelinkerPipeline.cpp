@@ -74,6 +74,15 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
     if (!hasDynamicSegment)
         throw RelinkerException("No PT_DYNAMIC segment found");
 
+    FileByteOffset sceDynlibBase = 0;
+    for (const auto& ph : programHeaders) {
+        if (ph.Type == 0x61000000) { // PT_SCE_DYNLIBDATA
+            sceDynlibBase = ph.Offset;
+            break;
+        }
+    }
+    validateRange(sceDynlibBase, 0, "SCE dynamic data");
+
     auto hasTag = [&](const std::int64_t tag) {
         for (const auto& t : dynTags)
             if (t.Tag == tag)
@@ -99,8 +108,12 @@ RelinkResult RelinkerPipeline::Relink(const std::vector<std::uint8_t>& sourceElf
     };
 
     auto readAsOffset = [&](const std::int64_t osTag, const std::int64_t sysvTag, const char* name) -> FileByteOffset {
-        if (requireExactlyOneOf(osTag, sysvTag, name))
-            return getTagValue(osTag);
+        if (requireExactlyOneOf(osTag, sysvTag, name)) {
+            const auto relative = getTagValue(osTag);
+            if (relative > raw.size() - sceDynlibBase)
+                throw RelinkerException("SCE dynamic table exceeds input file", sceDynlibBase);
+            return sceDynlibBase + relative;
+        }
         return _elfReader->TranslateVirtualAddress(getTagValue(sysvTag));
     };
 

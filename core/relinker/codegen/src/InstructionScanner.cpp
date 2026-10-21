@@ -9,11 +9,18 @@ namespace Codegen {
 
 class InstructionScanner : public IInstructionScanner {
 public:
+    explicit InstructionScanner(const bool skipUndecodable) : _skipUndecodable(skipUndecodable) {}
+
     [[nodiscard]] std::vector<InstructionMatch> ScanCodeSection(
         const std::vector<std::uint8_t>& codeSection,
         Domain::FileByteOffset codeSectionOffset,
         Domain::FileByteOffset codeSectionSize
     ) const override;
+
+private:
+    // Data embedded in executable segments (jump tables, constant pools) does not decode.
+    // When set, such bytes are stepped over one at a time instead of failing the scan.
+    bool _skipUndecodable;
 };
 
 std::vector<InstructionMatch> InstructionScanner::ScanCodeSection(
@@ -37,6 +44,10 @@ std::vector<InstructionMatch> InstructionScanner::ScanCodeSection(
             length = decoder.Decode(cursor, available);
         } catch (const CodegenException& e) {
             if (std::all_of(cursor, cursor + available, [](const std::uint8_t b) { return b == 0; })) break;
+            if (_skipUndecodable) {
+                ++i;
+                continue;
+            }
             throw CodegenException(std::string("Cannot decode instruction: ") + e.what(), codeSectionOffset + i);
         }
 
@@ -49,7 +60,11 @@ std::vector<InstructionMatch> InstructionScanner::ScanCodeSection(
 }
 
 std::unique_ptr<IInstructionScanner> MakeInstructionScanner() {
-    return std::make_unique<InstructionScanner>();
+    return std::make_unique<InstructionScanner>(false);
+}
+
+std::unique_ptr<IInstructionScanner> MakeResyncingInstructionScanner() {
+    return std::make_unique<InstructionScanner>(true);
 }
 
 }

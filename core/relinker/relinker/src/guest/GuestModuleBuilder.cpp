@@ -100,7 +100,12 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
     std::vector<std::size_t> order;
     std::vector<unsigned char> states(images.size());
     const std::function<void(std::size_t)> visit = [&](std::size_t index) {
-        if (states[index] == 1) throw Domain::RelinkerException("Cyclic guest initialization dependency: " + images[index].SourcePath.string());
+        // Mutually importing modules (e.g. PS4 libc.prx and libSceFios2.prx) are legal; like the console loader,
+        // break the cycle at the back edge and initialize in depth-first order.
+        if (states[index] == 1) {
+            std::cerr << "warning: cyclic guest initialization dependency through " << images[index].SourcePath.string() << "; using depth-first order\n";
+            return;
+        }
         if (states[index] == 2) return;
         states[index] = 1;
         for (const auto dependency : dependencies[index]) visit(dependency);
