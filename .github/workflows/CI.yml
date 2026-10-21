@@ -1,44 +1,61 @@
+
 name: CI
 
 on:
   push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
   pull_request:
-  release:
-    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   linux:
-    name: Linux (GUI + tests, AppImage)
+    name: Linux (GUI + tests)
     runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Qt 6.8.2
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.2"
           host: linux
           target: desktop
+
       - name: Configure
         run: cmake --preset linux-release
+
       - name: Build
         run: cmake --build build/linux-release --parallel
+
       - name: Test
         run: ctest --test-dir build/linux-release --output-on-failure
+
       - name: Headless GUI smoke test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          ./build/linux-release/app/gui/ryty-gui --version
-      - name: Package (zip with CLI + AppImage)
-        if: always()
+        run: ./build/linux-release/app/gui/ryty-gui --version
+
+      - name: Package
         run: |
           mkdir -p dist
           cp build/linux-release/core/relinker/ryty dist/
-          zip -r ryty-linux.zip dist
-      - uses: actions/upload-artifact@v4
+          cp build/linux-release/app/gui/ryty-gui dist/
+          cd dist
+          zip -r ../ryty-linux.zip .
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ryty-linux
           path: ryty-linux.zip
+          if-no-files-found: error
 
   windows:
     name: Windows (GUI + tests, MSYS2 UCRT64)
@@ -46,9 +63,13 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
@@ -59,80 +80,119 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-base
             python
             zip
+
       - name: Configure
         run: cmake --preset windows-release
+
       - name: Build
         run: cmake --build build/windows-release --parallel
+
       - name: Test
         run: ctest --test-dir build/windows-release --output-on-failure
-      - name: Package (zip with CLI + GUI bundle)
-        if: always()
+
+      - name: Package
         run: |
           mkdir -p dist
           cp build/windows-release/core/relinker/ryty.exe dist/
           cp build/windows-release/app/gui/ryty-gui.exe dist/
           zip -r ryty-windows.zip dist
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ryty-windows
           path: ryty-windows.zip
+          if-no-files-found: error
 
   linux-cli:
-    name: Linux CLI (no Qt, graceful GUI skip)
+    name: Linux CLI (no Qt)
     runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Configure
         run: cmake --preset linux-release-cli
+
       - name: Build
         run: cmake --build build/linux-release-cli --parallel
+
       - name: Test
         run: ctest --test-dir build/linux-release-cli --output-on-failure
 
   macos:
-    name: macOS (CLI + tests, Metal bridge, codesign check)
+    name: macOS (CLI + tests)
     runs-on: macos-14
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.7.3"
           host: mac
           target: desktop
+
       - name: Configure
         run: cmake --preset macos-release
+
       - name: Build
         run: cmake --build build/macos-release --parallel
+
       - name: Test
         run: ctest --test-dir build/macos-release --output-on-failure
+
       - name: macOS toolchain smoke test
         run: |
-          # The Metal bridge must be present and the CLI must accept --macos.
           ./build/macos-release/core/relinker/ryty --help || true
           python3 core/relinker/tests/MacOsSignatureTests.py build/macos-release/core/relinker/ryty
+
       - name: Package
-        if: always()
         run: |
           mkdir -p dist
           cp build/macos-release/core/relinker/ryty dist/
-          zip -r ryty-macos.zip dist
-      - uses: actions/upload-artifact@v4
+          cd dist
+          zip -r ../ryty-macos.zip .
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ryty-macos
           path: ryty-macos.zip
+          if-no-files-found: error
 
   release:
-    name: Publish release zips
-    needs: [linux, windows, macos]
-    if: github.event_name == 'release'
+    name: Create GitHub Release
+    needs:
+      - linux
+      - windows
+      - macos
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@v2
+
+      - name: Verify release assets
+        run: |
+          test -f artifacts/ryty-linux/ryty-linux.zip
+          test -f artifacts/ryty-windows/ryty-windows.zip
+          test -f artifacts/ryty-macos/ryty-macos.zip
+          find artifacts -type f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: RYTY ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             artifacts/ryty-linux/ryty-linux.zip
             artifacts/ryty-windows/ryty-windows.zip
