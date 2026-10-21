@@ -75,7 +75,7 @@ private:
 std::vector<FileByteOffset> CallSiteResolver::ResolveCallSites(const std::vector<std::uint8_t>& textSection, const FileByteOffset textSectionVAddr, const VirtualAddress targetGotOrPltAddress, const ByteCount targetGotOrPltSize) {
     if (textSection.empty()) return {};
     if (_cachedTextPtr != &textSection) {
-        auto scanner = Codegen::MakeInstructionScanner();
+        auto scanner = Codegen::MakeResyncingInstructionScanner();
         auto instructions = scanner->ScanCodeSection(textSection, textSectionVAddr, textSection.size());
         _cachedTargetToInstr.clear();
         for (const auto& m : instructions) {

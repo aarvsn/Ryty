@@ -122,7 +122,13 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
     for (std::uint64_t offset = 0; offset < symSize; offset += 24) {
         auto name = string(Io::ReadU32(bytes, symOffset + offset));
         name = name.substr(0, name.find('#'));
-        const auto info = bytes[symOffset + offset + 4];
+        auto info = bytes[symOffset + offset + 4];
+        // PS4 system modules each carry a module-info record as an STT_SCE (type 11) symbol with the same
+        // NID; only the loader reads it, so keep it as a local object rather than an export.
+        if ((info & 15) == 11) {
+            info = 1;
+            image.Dynamic.DynSymData[offset + 4] = info;
+        }
         const auto visibility = bytes[symOffset + offset + 5];
         const auto section = Io::ReadU16(bytes, symOffset + offset + 6);
         const auto value = Io::ReadU64(bytes, symOffset + offset + 8);
@@ -132,9 +138,18 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
             image.Symbols.push_back({{}, 0, 0, 0, 0, 0});
             continue;
         }
-        if (offset != 0 && ((info >> 4) > 2 || (visibility & ~3u) != 0 || ((info & 15) != 0 && (info & 15) != 1 && (info & 15) != 2 && (info & 15) != 6))) fail("Unsupported symbol attributes: " + name);
+        // PS4 modules carry an empty, undefined local STT_SECTION placeholder at index 1; it binds nothing.
+        const bool sectionPlaceholder = (info & 15) == 3 && (info >> 4) == 0 && section == 0 && value == 0 && size == 0 && name.empty();
+        if (offset != 0 && !sectionPlaceholder && ((info >> 4) > 2 || (visibility & ~3u) != 0 || ((info & 15) != 0 && (info & 15) != 1 && (info & 15) != 2 && (info & 15) != 6))) fail("Unsupported symbol attributes: " + name);
         if (section != 0 && (info >> 4) != 0 && visibility != 1 && visibility != 2) {
-            if (name.empty() || !exports.insert(name).second) fail("Duplicate or empty export after stripping #: " + name);
+            if (name.empty()) fail("Empty export after stripping #");
+            if (!exports.insert(name).second) {
+                // Some system modules (libSceJpegDec) export a function under two libraries
+                // (libSceJpegDec and libSceJpegDec_jvm); the NID is the same, so the first export
+                // serves both and the repeat becomes a local symbol.
+                info = static_cast<std::uint8_t>(info & 15);
+                image.Dynamic.DynSymData[offset + 4] = info;
+            }
         }
         if ((info & 15) == 6 && section != 0 && (tls == nullptr || value > tls->MemorySize || size > tls->MemorySize - value)) fail("TLS symbol exceeds TLS segment: " + name);
         if (section != 0 && (info & 15) != 6) {
@@ -164,8 +179,16 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
         const auto offset = table(addressTag, sceAddressTag, size);
         output.assign(bytes.begin() + offset, bytes.begin() + offset + size);
         for (std::uint64_t index = 0; index < size; index += 24) {
-            const auto info = Io::ReadU64(output, index + 8);
+            auto info = Io::ReadU64(output, index + 8);
             const auto relocation = static_cast<std::uint32_t>(info);
+            // PS4 modules point module-local TLS relocations at the section placeholder; that means "this module", as symbol 0 does.
+            if ((relocation == 16 || relocation == 17 || relocation == 18) && (info >> 32) != 0 && (info >> 32) < image.Symbols.size()) {
+                const auto& symbol = image.Symbols[info >> 32];
+                if ((symbol.Info & 15) == 3 && (symbol.Info >> 4) == 0 && symbol.Section == 0 && symbol.Name.empty()) {
+                    info = relocation;
+                    Io::WriteU64(output, index + 8, info);
+                }
+            }
             if ((info >> 32) >= image.Symbols.size() || (plt && relocation != 7) || (relocation != 1 && relocation != 6 && relocation != 7 && relocation != 8 && relocation != 16 && relocation != 17 && relocation != 18)) fail("Unsupported relocation or symbol index");
             const auto target = Io::ReadU64(output, index);
             const auto addend = Io::ReadU64(output, index + 16);
@@ -192,10 +215,10 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
     copyRelocations(23, 0x61000029, 2, 0x6100002d, image.Dynamic.RelaPltData, true);
     if (!image.Dynamic.RelaPltData.empty() && get(20, 0x6100002b) != 7) fail("Unsupported PLT relocation format");
     if (tags.contains(3) || tags.contains(0x61000027)) image.Got = get(3, 0x61000027);
-    if (tags.contains(12)) image.Init = tags.at(12);
-    if (tags.contains(13)) image.Fini = tags.at(13);
-    if (image.Init != 0) mapped(image.Init, 1, 1);
-    if (image.Fini != 0) mapped(image.Fini, 1, 1);
+    if (tags.contains(12)) { image.Init = tags.at(12); image.HasInit = true; }
+    if (tags.contains(13)) { image.Fini = tags.at(13); image.HasFini = true; }
+    if (image.HasInit) mapped(image.Init, 1, 1);
+    if (image.HasFini) mapped(image.Fini, 1, 1);
     const auto readLifecycleArray = [&](std::uint64_t addressTag, std::uint64_t sizeTag, std::vector<std::uint64_t>& entries) {
         if (!tags.contains(addressTag) && !tags.contains(sizeTag)) return;
         if (!tags.contains(sizeTag) || (tags.at(sizeTag) != 0 && !tags.contains(addressTag))) fail("Incomplete guest lifecycle array");
@@ -228,7 +251,7 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
     };
     readLifecycleArray(25, 27, image.InitArray);
     readLifecycleArray(26, 28, image.FiniArray);
-    if (tags.contains(33) && tags.at(33) != 0 && image.Init == 0) fail("Guest PREINIT_ARRAY has no module initializer");
+    if (tags.contains(33) && tags.at(33) != 0 && !image.HasInit) fail("Guest PREINIT_ARRAY has no module initializer");
     image.Bytes = std::move(bytes);
     return image;
 }

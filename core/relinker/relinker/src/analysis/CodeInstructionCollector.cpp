@@ -4,6 +4,8 @@
 #include <codegen/x86/X64InstructionDecoder.hpp>
 #include <codegen/CodegenException.hpp>
 #include <io/BufferUtils.hpp>
+#include <algorithm>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <string>
@@ -121,6 +123,9 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
     }
     CodePointers pointers;
     std::set<std::uint64_t> importSlots;
+    // PS4 images keep read-only data (strings, tables) in the executable segment, so a relocated pointer
+    // into it is not necessarily code. Such pointers become roots only if they land inside a known function.
+    std::set<std::uint64_t> pointerTargets;
     const auto readRelocations = [&](std::uint64_t addressTag, std::uint64_t sceAddressTag, std::uint64_t sizeTag, std::uint64_t sceSizeTag) {
         const auto size = value(sizeTag, sceSizeTag);
         if (!size) return;
@@ -135,7 +140,7 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
             const auto addend = Io::ReadU64(bytes, offset + 16);
             if (type == 8) {
                 if (index != 0 || !pointers.Values.emplace(slot, addend).second) throw Domain::RelinkerException("Code analysis: invalid relative relocation", slot);
-                addRoot(addend);
+                pointerTargets.insert(addend);
             } else if (type == 1 || type == 6 || type == 7) {
                 if (index == 0 || index >= symbolCount) throw Domain::RelinkerException("Code analysis: invalid relocation symbol", slot);
                 const auto symbol = symbols + index * 24;
@@ -143,7 +148,7 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
                 else {
                     const auto target = Io::ReadU64(bytes, symbol + 8) + addend;
                     if (!pointers.Values.emplace(slot, target).second) throw Domain::RelinkerException("Code analysis: duplicate pointer relocation", slot);
-                    addRoot(target);
+                    pointerTargets.insert(target);
                 }
             }
         }
@@ -170,12 +175,22 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
         addFunction(function.Begin, function.End - function.Begin);
         for (const auto target : function.ExtraTargets) addRoot(target);
     }
+    for (const auto target : pointerTargets) {
+        if (functions.empty()) { addRoot(target); continue; }
+        auto containing = functions.upper_bound(target);
+        if (containing == functions.begin()) continue;
+        --containing;
+        if (target < containing->second) addRoot(target);
+    }
     if (roots.empty()) throw Domain::RelinkerException("Code analysis: no code entry points");
     std::set<std::uint64_t> instructions;
     const Codegen::X64InstructionDecoder decoder;
     for (const auto& [begin, end] : functions) {
         const auto offset = fileOffset(begin, end - begin);
         for (auto address = begin; address < end;) {
+            // Function ranges can include alignment padding (nop/int3/zero bytes); it is not code.
+            const auto* rest = bytes.data() + offset + address - begin;
+            if (std::all_of(rest, rest + (end - address), [](const std::uint8_t b) { return b == 0x00 || b == 0x90 || b == 0xcc; })) break;
             Codegen::DecodedInstructionInfo info;
             try {
                 info = decoder.DecodeInstruction(bytes.data() + offset + address - begin, end - address);
@@ -209,9 +224,20 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
             }
         }
     } while (roots.size() != previousRoots);
+    // Fall-through after calls to no-return functions can decode alignment padding that runs into the next
+    // function. On overlap, a known entry point wins; otherwise the instruction decoded first is kept.
+    std::set<std::uint64_t> resolved;
+    std::uint64_t previousAddress = 0;
     std::uint64_t previousEnd = 0;
+    std::size_t overlaps = 0;
     for (const auto address : instructions) {
-        if (address < previousEnd) throw Domain::RelinkerException("Code analysis: overlapping instruction boundaries", address);
+        if (address < previousEnd) {
+            ++overlaps;
+            if (!roots.contains(address)) continue;
+            resolved.erase(previousAddress);
+        }
+        resolved.insert(address);
+        previousAddress = address;
         for (const auto& header : headers) {
             if (header.Type != 1 || (header.Flags & 1) == 0 || address < header.MappedAddress || address - header.MappedAddress >= header.FileSize) continue;
             const auto offset = address - header.MappedAddress;
@@ -219,7 +245,8 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
             break;
         }
     }
-    return instructions;
+    if (overlaps != 0) std::cerr << "warning: code analysis resolved " << overlaps << " overlapping instruction decodings\n";
+    return resolved;
 }
 
 }

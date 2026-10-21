@@ -35,6 +35,9 @@ struct GuestImage {
     std::vector<std::uint64_t> FiniArray;
     std::uint64_t Init = 0;
     std::uint64_t Fini = 0;
+    // PS4 modules can place DT_INIT/DT_FINI at address 0, so presence is tracked separately from the value.
+    bool HasInit = false;
+    bool HasFini = false;
     std::uint64_t Got = 0;
     bool UsePlatformTlsResolver = true;
 };

@@ -20,6 +20,8 @@ public:
 };
 
 std::unique_ptr<IInstructionScanner> MakeInstructionScanner();
+// Skips bytes that do not decode instead of failing; only for informational scans.
+std::unique_ptr<IInstructionScanner> MakeResyncingInstructionScanner();
 
 }
 
