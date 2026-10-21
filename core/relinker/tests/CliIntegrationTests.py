@@ -32,8 +32,8 @@ class CliIntegrationTests(unittest.TestCase):
         if extra:
             command += extra
         result = subprocess.run(command + [str(source), str(output)],
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                                capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, (result.stdout or "") + (result.stderr or ""))
         return report, self.root / "output.registry.json"
 
     def test_rytynet_flag_writes_marker_and_report(self):
@@ -74,16 +74,16 @@ class CliIntegrationTests(unittest.TestCase):
                 target = self.root / (name + AUTORUN.suffix)
                 shutil.copy2(AUTORUN, target)
                 result = subprocess.run([str(AUTORUN), str(target)], input="\n",
-                                        capture_output=True, text=True, timeout=30,
+                                        capture_output=True, encoding="utf-8", errors="replace", timeout=30,
                                         env={**os.environ, "RYTY_AUTORUN_NAME": "substituted"})
-                self.assertEqual(result.returncode, 37, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 37, (result.stdout or "") + (result.stderr or ""))
 
     def test_autorun_reports_launch_failure(self):
         target = self.root / ("invalid" + AUTORUN.suffix)
         target.write_bytes(b"not an executable")
         result = subprocess.run([str(AUTORUN), str(target)], input="\n",
-                                capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                                capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 1, (result.stdout or "") + (result.stderr or ""))
         self.assertIn("Cannot launch executable", result.stderr)
 
 

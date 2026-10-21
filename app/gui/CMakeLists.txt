@@ -18,6 +18,7 @@ target_compile_features(ryty-gui PRIVATE cxx_std_20)
 set_target_properties(ryty-gui PROPERTIES
     AUTOMOC ON
     CXX_EXTENSIONS OFF
+    MACOSX_BUNDLE TRUE
 )
 
 if(MINGW)

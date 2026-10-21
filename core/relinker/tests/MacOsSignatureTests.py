@@ -38,9 +38,9 @@ class MacOsSignatureTests(unittest.TestCase):
         cls.output = Path(cls._temporary.name) / "output.app"
         result = subprocess.run(
             [str(RYTY), "--skip-sce-module", "--skip-syscall-check", "--macos", str(source), str(cls.output)],
-            capture_output=True, text=True, timeout=30)
+            capture_output=True, encoding="utf-8", errors="replace", timeout=30)
         if result.returncode != 0:
-            raise AssertionError(result.stdout + result.stderr)
+            raise AssertionError((result.stdout or "") + (result.stderr or ""))
         cls.image = cls.output.read_bytes()
 
     @classmethod

@@ -31,9 +31,6 @@ if(APPLE)
     target_link_libraries(ryty_metal PRIVATE "-framework Metal" "-framework MetalKit" "-framework Cocoa" "-framework QuartzCore")
 endif()
 
-if(NOT WIN32 AND NOT APPLE)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
-endif()
 
 include(CheckIPOSupported)
 check_ipo_supported(RESULT rtyIpoSupported OUTPUT rtyIpoOutput)
@@ -107,7 +104,20 @@ else()
     message(STATUS "Run 'git submodule update --init --recursive' to build the runtime libraries and GUI-adjacent components")
 endif()
 
+if(NOT WIN32 AND NOT APPLE)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+endif()
+
 add_subdirectory(core/relinker)
+
+if(NOT WIN32 AND NOT APPLE)
+    string(REPLACE "-static-libgcc" "" RTY_NO_STATIC_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    string(REPLACE "-static-libstdc++" "" RTY_NO_STATIC_FLAGS "${RTY_NO_STATIC_FLAGS}")
+    string(REPLACE "-static" "" RTY_NO_STATIC_FLAGS "${RTY_NO_STATIC_FLAGS}")
+    string(STRIP "${RTY_NO_STATIC_FLAGS}" RTY_SAVED_EXE_LINKER_FLAGS)
+    set(RTY_ORIG_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${RTY_SAVED_EXE_LINKER_FLAGS}")
+endif()
 
 find_package(Qt6 QUIET COMPONENTS Widgets)
 
@@ -116,4 +126,8 @@ if(RTY_BUILD_GUI AND Qt6_FOUND)
     message(STATUS "Qt6 found: building the ryty-gui launcher (${Qt6_VERSION})")
 elseif(RTY_BUILD_GUI)
     message(STATUS "Qt6 not found: skipping ryty-gui")
+endif()
+
+if(NOT WIN32 AND NOT APPLE)
+    set(CMAKE_EXE_LINKER_FLAGS "${RTY_ORIG_EXE_LINKER_FLAGS}")
 endif()

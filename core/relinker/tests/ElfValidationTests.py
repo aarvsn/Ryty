@@ -46,19 +46,19 @@ class ElfValidationTests(unittest.TestCase):
         if skip_syscalls:
             command.append("--skip-syscall-check")
         result = subprocess.run(command + [str(source), str(output)],
-                                capture_output=True, text=True, timeout=15)
+                                capture_output=True, encoding="utf-8", errors="replace", timeout=15)
         return result, output
 
     def assert_rejected(self, image, skip_syscalls=True):
         result, output = self.run_image(image, skip_syscalls)
-        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 2, (result.stdout or "") + (result.stderr or ""))
         self.assertIn("FAIL:", result.stderr)
         self.assertNotIn("Sanitizer", result.stderr)
         self.assertEqual(output.read_bytes(), b"existing output")
 
     def test_valid_stripped_elf_still_converts(self):
         result, output = self.run_image(make_elf("test_nid"))
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, (result.stdout or "") + (result.stderr or ""))
         self.assertEqual(output.read_bytes()[:4], b"\x7fELF")
 
     def test_rejects_unsupported_elf_encoding(self):
@@ -141,7 +141,7 @@ class ElfValidationTests(unittest.TestCase):
 
     def test_scans_every_executable_segment(self):
         result, output = self.run_image(multiple_code_segments(), skip_syscalls=False)
-        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 2, (result.stdout or "") + (result.stderr or ""))
         self.assertIn("Forbidden syscall", result.stderr)
         self.assertEqual(output.read_bytes(), b"existing output")
 
