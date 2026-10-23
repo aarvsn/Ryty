@@ -137,8 +137,9 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
         Io::AppendU64(dynamic.DynamicSegmentData, dynamic.DynStrData.size());
         Io::AppendString(dynamic.DynStrData, name);
     };
-    const auto relativeDirectory = "app0/" + directory.filename().generic_string();
-    for (const auto index : order) if (!windows) addNeeded("$ORIGIN/" + relativeDirectory + "/" + images[index].OutputName);
+    const auto relativeDirectoryStr = "app0/" + directory.filename().generic_string();
+    const auto relativeDirectoryPath = std::filesystem::path("app0") / directory.filename();
+    for (const auto index : order) if (!windows) addNeeded("$ORIGIN/" + relativeDirectoryStr + "/" + images[index].OutputName);
     for (const auto& name : hostLibraries) addNeeded(name);
     std::string guestRunPath = runPath;
     if (!windows) {
@@ -150,7 +151,7 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
         else if (!std::filesystem::path(guestRunPath).is_absolute()) throw Domain::RelinkerException("Guest Linux/macOS run path must be absolute or begin with $ORIGIN, @executable_path, or @loader_path");
     }
     std::vector<GuestArtifact> artifacts;
-    const auto destination = std::filesystem::absolute(outputPath).parent_path() / relativeDirectory;
+    const auto destination = std::filesystem::absolute(outputPath).parent_path() / relativeDirectoryPath;
     for (const auto index : order) {
         const auto& image = images[index];
         const auto target = destination / image.OutputName;
@@ -159,7 +160,7 @@ std::vector<GuestArtifact> GuestModuleBuilder::Build(const std::filesystem::path
         if (std::filesystem::exists(target) && std::filesystem::equivalent(inputPath, target)) throw Domain::RelinkerException("Guest output would overwrite the input executable");
         Domain::GuestRuntime runtime;
         runtime.UsePlatformTlsResolver = image.UsePlatformTlsResolver;
-        runtime.Path = relativeDirectory + "/" + image.OutputName;
+        runtime.Path = relativeDirectoryStr + "/" + image.OutputName;
         std::vector<std::uint8_t> output;
         if (windows) output = Elfpatcher::GuestModuleWriter().WriteWindows(image, runtime);
         else {
