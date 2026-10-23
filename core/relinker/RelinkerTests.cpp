@@ -2,8 +2,12 @@
 #include <io/ByteReader.hpp>
 #include <io/ByteWriter.hpp>
 #include <relinker/parsing/ElfReader.hpp>
+#include <relinker/guest/GuestImage.hpp>
+#include <relinker/analysis/SyscallScanner.hpp>
 #include <elfpatcher/macos/MacOsElfPatcher.hpp>
 #include <codegen/IInstructionScanner.hpp>
+#include <filesystem>
+#include <fstream>
 
 extern "C" {
 void RytyMetalInitializeDevice(void);
@@ -243,6 +247,116 @@ void TestByteIo() {
     std::cout << "  -> PASSED!\n";
 }
 
+void TestGuestModulePath() {
+    std::cout << "[Test] Running TestGuestModulePath...\n";
+    const auto tempDir = std::filesystem::temp_directory_path() / "ryty_guest_path_test";
+    std::filesystem::remove_all(tempDir);
+    std::filesystem::create_directories(tempDir / "sce_module");
+
+    std::vector<std::uint8_t> dummyElf(0x1000, 0);
+    const std::uint8_t ident[16] = {0x7f, 'E', 'L', 'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::memcpy(dummyElf.data(), ident, 16);
+
+    auto put16 = [&](std::size_t off, std::uint16_t v) { std::memcpy(dummyElf.data() + off, &v, 2); };
+    auto put32 = [&](std::size_t off, std::uint32_t v) { std::memcpy(dummyElf.data() + off, &v, 4); };
+    auto put64 = [&](std::size_t off, std::uint64_t v) { std::memcpy(dummyElf.data() + off, &v, 8); };
+
+    put16(16, 3);          // e_type = ET_DYN
+    put16(18, 62);         // e_machine = EM_X86_64
+    put32(20, 1);          // e_version
+    put64(32, 64);         // e_phoff
+    put16(52, 64);         // e_ehsize
+    put16(54, 56);         // e_phentsize
+    put16(56, 3);          // e_phnum = 3
+
+    // PH 0: PT_LOAD at vaddr 0x1000 (offset 0x100)
+    put32(64 + 0*56 + 0, 1);
+    put32(64 + 0*56 + 4, 5);
+    put64(64 + 0*56 + 8, 0x100);
+    put64(64 + 0*56 + 16, 0x1000);
+    put64(64 + 0*56 + 24, 0x1000);
+    put64(64 + 0*56 + 32, 0x100);
+    put64(64 + 0*56 + 40, 0x100);
+    put64(64 + 0*56 + 48, 0x100);
+
+    // PH 1: PT_LOAD at vaddr 0x1200 (offset 0x200)
+    put32(64 + 1*56 + 0, 1);
+    put32(64 + 1*56 + 4, 6);
+    put64(64 + 1*56 + 8, 0x200);
+    put64(64 + 1*56 + 16, 0x1200);
+    put64(64 + 1*56 + 24, 0x1200);
+    put64(64 + 1*56 + 32, 0x200);
+    put64(64 + 1*56 + 40, 0x200);
+    put64(64 + 1*56 + 48, 0x100);
+
+    // PH 2: PT_DYNAMIC at vaddr 0x1200 (offset 0x200)
+    put32(64 + 2*56 + 0, 2);
+    put32(64 + 2*56 + 4, 6);
+    put64(64 + 2*56 + 8, 0x200);
+    put64(64 + 2*56 + 16, 0x1200);
+    put64(64 + 2*56 + 24, 0x1200);
+    put64(64 + 2*56 + 32, 0xa0);
+    put64(64 + 2*56 + 40, 0xa0);
+    put64(64 + 2*56 + 48, 8);
+
+    // Put a ret instruction (0xc3) at offset 0x100 (vaddr 0x1000)
+    dummyElf[0x100] = 0xc3;
+
+    std::size_t dynOff = 0x200;
+    auto addTag = [&](std::uint64_t tag, std::uint64_t val) {
+        put64(dynOff, tag);
+        put64(dynOff + 8, val);
+        dynOff += 16;
+    };
+    addTag(5, 0x1250);  // DT_STRTAB
+    addTag(10, 12);     // DT_STRSZ
+    addTag(6, 0x1260);  // DT_SYMTAB
+    addTag(11, 24);     // DT_SYMENT
+    addTag(4, 0x1290);  // DT_HASH
+    addTag(0, 0);       // DT_NULL
+
+    // STRTAB at offset 0x250
+    std::memcpy(dummyElf.data() + 0x250, "\0myExport\0", 10);
+
+    // SYMTAB at offset 0x260 (Index 0: NULL, Index 1: myExport)
+    // Index 1 (offset 0x260 + 24):
+    put32(0x260 + 24 + 0, 1);      // st_name = 1
+    dummyElf[0x260 + 24 + 4] = 0x12; // st_info = STB_GLOBAL | STT_FUNC
+    dummyElf[0x260 + 24 + 5] = 0;    // st_other = 0
+    put16(0x260 + 24 + 6, 1);      // st_shndx = 1
+    put64(0x260 + 24 + 8, 0x1000); // st_value = 0x1000
+    put64(0x260 + 24 + 16, 8);     // st_size = 8
+
+    // DT_HASH at offset 0x290
+    put32(0x290, 1); // nbucket = 1
+    put32(0x294, 2); // nchain = 2
+
+    const auto inputExe = tempDir / "eboot.elf";
+    const auto outputExe = tempDir / "GTSport.exe";
+    const auto guestPrx = tempDir / "sce_module" / "libTest.prx";
+
+    {
+        std::ofstream f(inputExe, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(dummyElf.data()), static_cast<std::streamsize>(dummyElf.size()));
+    }
+    {
+        std::ofstream f(guestPrx, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(dummyElf.data()), static_cast<std::streamsize>(dummyElf.size()));
+    }
+
+    Domain::SysVDynamicSection dynamic;
+    const auto syscallScanner = Relinker::MakeNullSyscallScanner();
+    Relinker::GuestModuleBuilder builder;
+    const auto artifacts = builder.Build(inputExe, outputExe, dynamic, true, false, *syscallScanner, false, "$ORIGIN/libs", {});
+
+    assert(artifacts.size() == 1);
+    std::filesystem::create_directories(artifacts[0].Path.parent_path());
+    assert(std::filesystem::exists(artifacts[0].Path.parent_path()));
+
+    std::filesystem::remove_all(tempDir);
+    std::cout << "  -> PASSED!\n";
+}
+
 int main() {
     std::cout << "Starting Ryty Relinker Unit Tests...\n";
     TestCliArgs();
@@ -250,6 +364,7 @@ int main() {
     TestMacOsPatcher();
     TestMetalBridge();
     TestByteIo();
+    TestGuestModulePath();
     std::cout << "All Ryty Relinker Unit Tests Passed Successfully!\n";
     return 0;
 }
