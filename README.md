@@ -24,6 +24,7 @@ Ryty is a fork of [AnyPS5](https://github.com/boykopovar/AnyPS5) - see
 * **Experimental macOS Target with Metal** - `--macos` target support with Objective-C / Objective-C++ Metal API graphics rendering bridge.
 * **Qt6 GUI** (`ryty-gui`) on Linux, Windows, and macOS, shipped with the Qt6 runtime
   bundled (self-contained AppImage on Linux, windeployqt DLL set on Windows).
+* **Web-Based Porting Studio** (`demo/web`) - browser-based client-side ELF parser, auto console detection, NID inspector, and JSON porting report generator inspired by AnyPS5 demo/web.
 * **JSON porting report** (`--report`) with per-site substitutions, summary
   counters and warnings.
 * **Hardened parsing** - `DT_STRSZ`-bounded strings, 8-byte GOT slot

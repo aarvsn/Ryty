@@ -3,6 +3,23 @@
 Releases before 1.0.7 predate this file; their history lives in the commit
 log and the existing documentation.
 
+## 1.0.9
+
+### Relinker Hardening
+* String parsing in `GuestImageReader.cpp` is strictly bounded by `strSize`, ensuring malformed offsets or missing NUL terminators cannot cause buffer reads past the dynamic string table.
+
+### Web-Based Porting
+* Added an interactive web-based porting application in `demo/web` inspired by AnyPS5 demo/web. Features client-side ELF header parsing, dynamic tag and NID analysis, auto console target detection (PS4 vs PS5), target architecture selection, instruction lowering controls, JSON report generation, and porting metadata export.
+
+### Expanded macOS Support
+* `MacOsElfPatcher` now sets `LC_SOURCE_VERSION` to 1.0.9.0 (`0x0001000000090000ULL`) and supports multi-RPATH runtime search paths. Extended Metal API bridging context in `RytyMetalRenderer`.
+
+### Improved NVIDIA GPU Support
+* Enhanced Vulkan shader recompiler device targeting for NVIDIA GPUs (`0x10DE`), incorporating Ampere/Ada/Hopper architecture optimizations, wave32 subgroup width pinning, and vendor pipeline state flags.
+
+### Improved RytyNet Service
+* Updated `libRytyNet` bridge to version 1.0.9 (`0x00010009u`). Enhanced HTTP header handling (`Authorization`, `Accept-Language`, custom headers), request timeouts, and option settings in `libSceHttp`. Added unit tests for bridge request and status operations.
+
 ## 1.0.7
 
 ### Increased macOS support

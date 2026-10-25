@@ -382,7 +382,7 @@ HttpResponse PerformHttpRequest(const HttpRequest& request, std::uint32_t timeou
     wire += "Connection: close\r\n";
     wire += request.headerBlock;
     if (wire.find("User-Agent:") == std::string::npos) {
-        wire += "User-Agent: RytyNet/1.0.7 (experimental)\r\n";
+        wire += "User-Agent: RytyNet/1.0.9 (experimental)\r\n";
     }
     wire += "\r\n";
     wire += request.body;

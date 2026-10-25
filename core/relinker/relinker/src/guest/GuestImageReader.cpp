@@ -101,10 +101,12 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
     };
     const auto strSize = get(10, 0x61000037);
     const auto strOffset = table(5, 0x61000035, strSize);
+    // Keep string bounded by strSize in string: prevents malformed offsets or missing terminators from making parsing consume bytes beyond that table.
     const auto string = [&](std::uint64_t offset) {
         if (offset >= strSize) fail("String offset out of bounds");
+        const std::uint64_t maxLen = strSize - offset;
         const auto start = bytes.begin() + static_cast<std::ptrdiff_t>(strOffset + offset);
-        const auto end = bytes.begin() + static_cast<std::ptrdiff_t>(strOffset + strSize);
+        const auto end = start + static_cast<std::ptrdiff_t>(maxLen);
         const auto zero = std::find(start, end, 0);
         if (zero == end) fail("Unterminated ELF string");
         return std::string(start, zero);

@@ -42,6 +42,11 @@ struct RequestState {
     std::string body;
     bool sent = false;
     bool tlsRequested = false;
+    bool authEnabled = false;
+    bool autoRedirect = false;
+    std::uint32_t connectTimeoutUs = 0;
+    std::uint32_t recvTimeoutUs = 0;
+    std::uint32_t sendTimeoutUs = 0;
     RytyNet::HttpResponse response;
     std::size_t readCursor = 0;
 };
@@ -127,7 +132,10 @@ void sendThroughBridge(int requestId) {
     outgoing.path = path;
     outgoing.headerBlock = request->headerBlock;
     outgoing.body = request->body;
-    request->response = RytyNet::PerformHttpRequest(outgoing, 0);
+    std::uint32_t timeoutMs = 0;
+    if (request->recvTimeoutUs > 0) timeoutMs = request->recvTimeoutUs / 1000;
+    else if (request->connectTimeoutUs > 0) timeoutMs = request->connectTimeoutUs / 1000;
+    request->response = RytyNet::PerformHttpRequest(outgoing, timeoutMs);
     request->readCursor = 0;
 }
 
@@ -293,20 +301,20 @@ int APS5_VABI sceHttpSendRequest(int request_id, const void* post_data, size_t s
 }
 
 int APS5_VABI sceHttpSetAuthEnabled(int id, int enable) {
-    (void)id;
-    (void)enable;
+    std::lock_guard lock(stateMutex);
+    if (auto* req = findRequest(id)) req->authEnabled = (enable != 0);
     return 0;
 }
 
 int APS5_VABI sceHttpSetAutoRedirect(int id, int enable) {
-    (void)id;
-    (void)enable;
+    std::lock_guard lock(stateMutex);
+    if (auto* req = findRequest(id)) req->autoRedirect = (enable != 0);
     return 0;
 }
 
 int APS5_VABI sceHttpSetConnectTimeOut(int id, uint32_t usec) {
-    (void)id;
-    (void)usec;
+    std::lock_guard lock(stateMutex);
+    if (auto* req = findRequest(id)) req->connectTimeoutUs = usec;
     return 0;
 }
 
@@ -324,8 +332,8 @@ int APS5_VABI sceHttpSetNonblock(int id, int enable) {
 }
 
 int APS5_VABI sceHttpSetRecvTimeOut(int id, uint32_t usec) {
-    (void)id;
-    (void)usec;
+    std::lock_guard lock(stateMutex);
+    if (auto* req = findRequest(id)) req->recvTimeoutUs = usec;
     return 0;
 }
 
@@ -350,8 +358,8 @@ int APS5_VABI sceHttpSetResolveTimeOut(int id, uint32_t usec) {
 }
 
 int APS5_VABI sceHttpSetSendTimeOut(int id, uint32_t usec) {
-    (void)id;
-    (void)usec;
+    std::lock_guard lock(stateMutex);
+    if (auto* req = findRequest(id)) req->sendTimeoutUs = usec;
     return 0;
 }
 
