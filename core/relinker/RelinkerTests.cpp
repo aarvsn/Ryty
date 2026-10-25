@@ -41,6 +41,7 @@ void RytyMetalSetSampleCount(int sampleCount);
 void RytyMetalSetRasterizerDiscardEnabled(int enabled);
 int RytyMetalGetDeviceCapabilities(void);
 }
+#include <SceTypes.hpp>
 #include <prx/libRytyNet/src/RytyNetBridge.hpp>
 #include <cassert>
 #include <cstring>
@@ -48,9 +49,9 @@ int RytyMetalGetDeviceCapabilities(void);
 #include <vector>
 
 extern "C" {
-int RytyNetIsEnabled(void);
-std::uint32_t RytyNetVersion(void);
-int RytyNetSetEnabled(int enable);
+int APS5_VABI RytyNetIsEnabled(void);
+std::uint32_t APS5_VABI RytyNetVersion(void);
+int APS5_VABI RytyNetSetEnabled(int enable);
 }
 
 void TestCliArgs() {

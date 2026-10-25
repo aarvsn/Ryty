@@ -76,6 +76,9 @@ void RytyMetalDrawIndexedPrimitives(int primitiveType, unsigned int indexCount, 
 
 unsigned long RytyMetalGetMaxThreadsPerThreadgroup(void);
 int RytyMetalSupportsFeatureSet(int featureSet);
+void RytyMetalSetSampleCount(int sampleCount);
+void RytyMetalSetRasterizerDiscardEnabled(int enabled);
+int RytyMetalGetDeviceCapabilities(void);
 
 void RytyMetalViewHostCreate(int w, int h, const char* _Nullable title);
 

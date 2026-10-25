@@ -309,3 +309,15 @@ int RytyMetalSupportsFeatureSet(int featureSet) {
     (void)featureSet;
     return 1;
 }
+
+void RytyMetalSetSampleCount(int sampleCount) {
+    (void)sampleCount;
+}
+
+void RytyMetalSetRasterizerDiscardEnabled(int enabled) {
+    (void)enabled;
+}
+
+int RytyMetalGetDeviceCapabilities(void) {
+    return 0x00010009;
+}
