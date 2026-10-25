@@ -77,6 +77,8 @@ endif()
 if(BUILD_TESTING)
     add_executable(relinker_tests
             ${CMAKE_CURRENT_SOURCE_DIR}/RelinkerTests.cpp
+            ${CMAKE_SOURCE_DIR}/core/libs/prx/libRytyNet/src/RytyNetBridge.cpp
+            ${CMAKE_SOURCE_DIR}/core/libs/prx/libRytyNet/Export.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/cli/src/CliArgs.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/cli/src/Autorun.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/elfpatcher/src/linux/LinuxElfPatcher.cpp
@@ -145,9 +147,13 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/io/include
             ${CMAKE_CURRENT_SOURCE_DIR}/codegen/include
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/include
+            ${CMAKE_SOURCE_DIR}/core/libs
     )
     if(APPLE)
         target_link_libraries(relinker_tests PRIVATE ryty_metal)
+    endif()
+    if(WIN32)
+        target_link_libraries(relinker_tests PRIVATE ws2_32)
     endif()
     if(MSVC)
         target_compile_options(relinker_tests PRIVATE /UNDEBUG)

@@ -37,11 +37,22 @@ void RytyMetalDrawPrimitives(int primitiveType, unsigned int start, unsigned int
 void RytyMetalDrawIndexedPrimitives(int primitiveType, unsigned int indexCount, int indexType, void* indexBuffer, unsigned int indexBufferOffset);
 unsigned long RytyMetalGetMaxThreadsPerThreadgroup(void);
 int RytyMetalSupportsFeatureSet(int featureSet);
+void RytyMetalSetSampleCount(int sampleCount);
+void RytyMetalSetRasterizerDiscardEnabled(int enabled);
+int RytyMetalGetDeviceCapabilities(void);
 }
+#include <SceTypes.hpp>
+#include <prx/libRytyNet/src/RytyNetBridge.hpp>
 #include <cassert>
 #include <cstring>
 #include <iostream>
 #include <vector>
+
+extern "C" {
+int APS5_VABI RytyNetIsEnabled(void);
+std::uint32_t APS5_VABI RytyNetVersion(void);
+int APS5_VABI RytyNetSetEnabled(int enable);
+}
 
 void TestCliArgs() {
     std::cout << "[Test] Running TestCliArgs...\n";
@@ -230,6 +241,9 @@ void TestMetalBridge() {
 
     assert(RytyMetalGetMaxThreadsPerThreadgroup() > 0);
     assert(RytyMetalSupportsFeatureSet(0) != 0);
+    RytyMetalSetSampleCount(4);
+    RytyMetalSetRasterizerDiscardEnabled(0);
+    assert(RytyMetalGetDeviceCapabilities() == 0x00010009);
 
     std::cout << "  -> PASSED!\n";
 }
@@ -244,6 +258,29 @@ void TestByteIo() {
     Io::ByteReader reader;
     assert(reader.ReadU32(buf, 0) == 0x12345678u);
     assert(reader.ReadU64(buf, 4) == 0x8765432112345678ull);
+    std::cout << "  -> PASSED!\n";
+}
+
+void TestRytyNetBridge() {
+    std::cout << "[Test] Running TestRytyNetBridge...\n";
+    assert(RytyNetVersion() == 0x00010009u);
+
+    bool isHttps = false;
+    std::string host, path;
+    std::uint16_t port = 0;
+    assert(RytyNet::ParseHttpUrl("http://example.com:8080/api/v1", isHttps, host, port, path) == true);
+    assert(isHttps == false);
+    assert(host == "example.com");
+    assert(port == 8080);
+    assert(path == "/api/v1");
+
+    RytyNetSetEnabled(1);
+    assert(RytyNetIsEnabled() == 1);
+
+    RytyNetSetEnabled(0);
+    assert(RytyNetIsEnabled() == 0);
+
+    RytyNetSetEnabled(-1); // restore default
     std::cout << "  -> PASSED!\n";
 }
 
@@ -365,6 +402,7 @@ int main() {
     TestMetalBridge();
     TestByteIo();
     TestGuestModulePath();
+    TestRytyNetBridge();
     std::cout << "All Ryty Relinker Unit Tests Passed Successfully!\n";
     return 0;
 }

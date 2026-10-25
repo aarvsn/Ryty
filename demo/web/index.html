@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ryty Web - PS4 / PS5 Executable Relinker & Porting Studio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="logo">
+            <span class="logo-title">Ryty Web</span>
+            <span class="badge">v1.0.9</span>
+        </div>
+        <div class="subtitle">Web-Based PlayStation 4 & PlayStation 5 Executable Porting Studio</div>
+    </header>
+
+    <main class="container">
+        <!-- Dropzone / File Loader -->
+        <section class="card upload-section">
+            <h2>Select PlayStation Executable (.elf, .prx, .bin)</h2>
+            <div id="dropzone" class="dropzone">
+                <div class="dropzone-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" width="48" height="48">
+                        <path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                    </svg>
+                    <p>Drag & Drop eboot.elf or PRX module here</p>
+                    <p class="small">or click to browse files</p>
+                    <input type="file" id="fileInput" accept=".elf,.prx,.bin,*">
+                </div>
+            </div>
+            <div id="fileMeta" class="file-meta hidden">
+                <span id="fileName" class="file-name"></span>
+                <span id="fileSize" class="file-size"></span>
+            </div>
+        </section>
+
+        <!-- Porting Settings -->
+        <section class="card settings-section">
+            <h2>Porting & Relinker Configuration</h2>
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label for="targetOs">Target Operating System</label>
+                    <select id="targetOs">
+                        <option value="linux" selected>Native Linux (SysV ELF64)</option>
+                        <option value="windows">Windows (PE / COFF x64)</option>
+                        <option value="macos">macOS (Mach-O 64 + Metal API Bridge)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="consoleMode">Console Mode</label>
+                    <select id="consoleMode">
+                        <option value="auto" selected>Auto-Detect (PS4 / PS5)</option>
+                        <option value="ps4">Force PlayStation 4</option>
+                        <option value="ps5">Force PlayStation 5</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="loweringTarget">AMD Lowering Mode</label>
+                    <select id="loweringTarget">
+                        <option value="intel" selected>To Intel x86-64 (Lower AMD SHA-NI & AMD-only instrs)</option>
+                        <option value="native">Native x86-64 Passthrough</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="unusedFilter">NID Optimization Filter</label>
+                    <select id="unusedFilter">
+                        <option value="0">Level 0: Keep All References</option>
+                        <option value="1" selected>Level 1: Keep Every Reference (Resilient Filter)</option>
+                        <option value="2">Level 2: Strict CFG Reachability</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="checkbox-grid">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="skipSyscall" checked>
+                    Skip Non-Portable Syscall Check
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="lazyBinding">
+                    Enable Lazy GOT/PLT Binding
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="rytyNet">
+                    RytyNet Online Service Bridge
+                </label>
+            </div>
+
+            <button id="portBtn" class="btn btn-primary" disabled>Analyze & Port Executable</button>
+        </section>
+
+        <!-- Inspection Tabs -->
+        <section class="card results-section hidden" id="resultsSection">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="summary">Summary & Detection</button>
+                <button class="tab-btn" data-tab="headers">Program Headers</button>
+                <button class="tab-btn" data-tab="dynamic">Dynamic Tags</button>
+                <button class="tab-btn" data-tab="nids">NIDs & Exports</button>
+                <button class="tab-btn" data-tab="report">JSON Porting Report</button>
+            </div>
+
+            <div class="tab-content" id="tab-summary">
+                <div class="summary-cards">
+                    <div class="stat-card">
+                        <div class="stat-label">Console Target</div>
+                        <div class="stat-value" id="detectedConsole">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">ELF Type</div>
+                        <div class="stat-value" id="elfType">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Entry Point</div>
+                        <div class="stat-value" id="entryPoint">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Needed Libraries</div>
+                        <div class="stat-value" id="neededCount">0</div>
+                    </div>
+                </div>
+                <div class="log-box" id="portLog"></div>
+            </div>
+
+            <div class="tab-content hidden" id="tab-headers">
+                <table class="data-table" id="headersTable">
+                    <thead>
+                        <tr>
+                            <th>Index</th>
+                            <th>Type</th>
+                            <th>Flags</th>
+                            <th>Offset</th>
+                            <th>VirtAddr</th>
+                            <th>FileSize</th>
+                            <th>MemSize</th>
+                            <th>Align</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="tab-content hidden" id="tab-dynamic">
+                <table class="data-table" id="dynamicTable">
+                    <thead>
+                        <tr>
+                            <th>Tag</th>
+                            <th>Name</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="tab-content hidden" id="tab-nids">
+                <div class="search-bar">
+                    <input type="text" id="nidSearch" placeholder="Search NID or symbol name...">
+                </div>
+                <table class="data-table" id="nidsTable">
+                    <thead>
+                        <tr>
+                            <th>Index</th>
+                            <th>Symbol / NID Name</th>
+                            <th>Type</th>
+                            <th>Binding</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="tab-content hidden" id="tab-report">
+                <div class="actions-bar">
+                    <button id="downloadReportBtn" class="btn btn-secondary">Download Report (.json)</button>
+                    <button id="exportBinaryBtn" class="btn btn-success">Export Ported Metadata & Binary</button>
+                </div>
+                <pre class="code-block" id="jsonReportText"></pre>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>Ryty Web v1.0.9 &copy; 2025 Ryty Contributors. Based on AnyPS5 relinker architecture.</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

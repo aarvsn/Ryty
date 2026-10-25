@@ -97,6 +97,15 @@ extern "C" int RytyMetalSupportsFeatureSet(int featureSet) {
     (void)featureSet;
     return 1;
 }
+extern "C" void RytyMetalSetSampleCount(int sampleCount) {
+    (void)sampleCount;
+}
+extern "C" void RytyMetalSetRasterizerDiscardEnabled(int enabled) {
+    (void)enabled;
+}
+extern "C" int RytyMetalGetDeviceCapabilities(void) {
+    return 0x00010009;
+}
 #endif
 
 namespace Elfpatcher::MacOs {
@@ -329,7 +338,7 @@ std::vector<std::uint8_t> makeSourceVersionCommand() {
     auto* cmd = reinterpret_cast<SourceVersionCommand*>(buf.data());
     cmd->Cmd = LC_SOURCE_VERSION;
     cmd->CmdSize = sizeof(SourceVersionCommand);
-    cmd->Version = 0x0001000000070000ULL; // 1.0.7.0
+    cmd->Version = 0x0001000000090000ULL; // 1.0.9.0
     return buf;
 }
 
@@ -571,8 +580,19 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     const auto cocoaLibCmd = makeDylibCommand("/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa");
     const auto quartzCoreLibCmd = makeDylibCommand("/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore");
     const auto libSystemCmd = makeDylibCommand("/usr/lib/libSystem.B.dylib");
-    std::string rpath = runPath.empty() ? "@executable_path/libs" : runPath;
-    const auto rpathCmd = makeRpathCommand(rpath);
+    std::vector<std::vector<std::uint8_t>> rpathCmds;
+    std::string rpaths = runPath.empty() ? "@executable_path/libs" : runPath;
+    std::size_t rstart = 0;
+    while (rstart < rpaths.size()) {
+        const auto pos = rpaths.find_first_of(":;", rstart);
+        const std::string path = rpaths.substr(rstart, pos == std::string::npos ? std::string::npos : pos - rstart);
+        if (!path.empty()) {
+            rpathCmds.push_back(makeRpathCommand(path));
+        }
+        if (pos == std::string::npos) break;
+        rstart = pos + 1;
+    }
+    if (rpathCmds.empty()) rpathCmds.push_back(makeRpathCommand("@executable_path/libs"));
 
     // ---- Parse the incoming (relinked) ELF program headers ----
     struct GuestLoad { std::uint64_t off, vaddr, filesz, memsz; std::uint32_t flags; };
@@ -814,8 +834,11 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     const std::uint32_t signatureCommandCount = 1; // LC_CODE_SIGNATURE
 
     // ---- Compute load command sizes and the page-aligned payload position ----
+    std::uint64_t totalRpathSize = 0;
+    for (const auto& cmd : rpathCmds) totalRpathSize += cmd.size();
+
     const std::uint32_t cmdsCount = static_cast<std::uint32_t>(segs.size() + 2 /*tramp,linkedit*/ + 1 /*main*/
-        + 1 /*dylinker*/ + 1 /*buildver*/ + 5 /*dylibs*/ + 1 /*rpath*/
+        + 1 /*dylinker*/ + 1 /*buildver*/ + 5 /*dylibs*/ + rpathCmds.size()
         + 1 /*uuid*/ + 1 /*sourcever*/ + 1 /*symtab*/ + 1 /*dysymtab*/
         + signatureCommandCount);
     const std::uint64_t cmdsSizeWithoutSyms = sizeof(SegmentCommand64) * (segs.size() + 2)
@@ -823,7 +846,7 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
         + sizeof(MainCommand)
         + dylinkerCmd.size() + buildVerCmd.size()
         + metalLibCmd.size() + metalKitLibCmd.size() + cocoaLibCmd.size()
-        + quartzCoreLibCmd.size() + libSystemCmd.size() + rpathCmd.size()
+        + quartzCoreLibCmd.size() + libSystemCmd.size() + totalRpathSize
         + uuidCmd.size() + sourceVerCmd.size()
         + sizeof(LinkeditDataCommand) /* LC_CODE_SIGNATURE */;
     const std::uint64_t cmdsSize = cmdsSizeWithoutSyms + sizeof(SymtabCommand) + sizeof(DysymtabCommand);
@@ -998,7 +1021,9 @@ std::vector<std::uint8_t> MacOsElfPatcher::Patch(
     appendBytes(cocoaLibCmd.data(), cocoaLibCmd.size());
     appendBytes(quartzCoreLibCmd.data(), quartzCoreLibCmd.size());
     appendBytes(libSystemCmd.data(), libSystemCmd.size());
-    appendBytes(rpathCmd.data(), rpathCmd.size());
+    for (const auto& cmd : rpathCmds) {
+        appendBytes(cmd.data(), cmd.size());
+    }
     appendBytes(codeSignatureCmd.data(), codeSignatureCmd.size());
 
     // ---- File data: payload, synthetic images, trampolines, symbol table ----

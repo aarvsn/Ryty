@@ -9,7 +9,7 @@ vendor-agnostic — every feature it requires is queried before use — but
 | Vendor | Support | Notes |
 | ------ | ------- | ----- |
 | AMD | Reference | The guest GPU the PS5 ports from is an AMD RDNA device; the recompiler's ISA decoder targets RDNA/GFX10 and the host driver was developed on AMD. |
-| NVIDIA | Supported (1.0.7) | Vendor-aware device selection, subgroup-size pinning via `VK_EXT_subgroup_size_control`, per-vendor shader variants. See below. |
+| NVIDIA | Supported (1.0.9) | Vendor-aware device selection, Ampere/Ada/Hopper architecture optimizations, subgroup-size pinning via `VK_EXT_subgroup_size_control`, wave32 execution, and per-vendor shader variants. See below. |
 | Intel | Best effort | Arc (Xe) meets the hard requirements (Vulkan 1.1, buffer device address, 8-bit storage, float controls, BC compression). Older integrated HD graphics usually lack pieces of that set and are rejected with a named missing feature. |
 | Apple (MoltenVK) | Not supported | The macOS port renders through Vulkan as well; MoltenVK lacks parts of the required feature set. On macOS the Metal bridge exists for window/presentation plumbing only (see [building](../user/BUILDING.md)). |
 
@@ -29,7 +29,7 @@ Everything else (descriptor indexing, timeline semaphores, mesh shaders,
 barycentric interpolants, depth clip control, indirect draw counts, host
 memory import, subgroup size control) is optional and gated per device.
 
-## What 1.0.7 changes for NVIDIA
+## What 1.0.9 changes for NVIDIA
 
 * **Device selection is scored, not first-match.** Discrete GPUs outrank
   integrated ones, so a laptop with an NVIDIA dGPU + Intel iGPU no longer
