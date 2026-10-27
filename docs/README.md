@@ -12,7 +12,7 @@
   instructions are lowered for Intel hosts, including the SHA extension
   suite and its verification suite.
 * [GPU support](dev/GPU_SUPPORT.md) - vendor matrix, device selection and
-  the NVIDIA support added in 1.0.7.
+  vendor awareness.
 * [CI](dev/CI.md) - the single CI workflow and the bundled GUI packages.
 * [Conventions](dev/CONVENTIONS.md) - code style rules.
 * [Technical debt](dev/TechnicalDebt.md) - known gaps and silent stubs.

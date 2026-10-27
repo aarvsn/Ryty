@@ -15,7 +15,7 @@
 
 namespace {
 
-constexpr std::uint32_t RYTNET_VERSION = 0x00010009u; // 1.0.9
+constexpr std::uint32_t RYTNET_VERSION = 0x00010100u; // 1.1.0
 
 struct RytyNetStatus {
     std::uint32_t structSize;   // sizeof(RytyNetStatus), set by the caller
