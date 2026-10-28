@@ -54,6 +54,16 @@ inline constexpr Entry kSha1msg2 = {"SHA1MSG2", nullptr, 0};
 inline constexpr Entry kSha256rnds2 = {"SHA256RNDS2", nullptr, 0};
 inline constexpr Entry kSha256msg1 = {"SHA256MSG1", nullptr, 0};
 inline constexpr Entry kSha256msg2 = {"SHA256MSG2", nullptr, 0};
+inline constexpr Entry kSkinit = {"SKINIT", nullptr, 0};
+inline constexpr Entry kClgi = {"CLGI", nullptr, 0};
+inline constexpr Entry kStgi = {"STGI", nullptr, 0};
+inline constexpr Entry kInvlpga = {"INVLPGA", nullptr, 0};
+inline constexpr Entry kPrefetch3dnow = {"PREFETCH", nullptr, 0};
+inline constexpr Entry kClflushopt = {"CLFLUSHOPT", nullptr, 0};
+inline constexpr Entry kClwb = {"CLWB", nullptr, 0};
+inline constexpr Entry kUmonitor = {"UMONITOR", nullptr, 0};
+inline constexpr Entry kUmwait = {"UMWAIT", nullptr, 0};
+inline constexpr Entry kTpause = {"TPAUSE", nullptr, 0};
 
 inline constexpr std::uint8_t kMovsStoreOpcode = 0x11;
 inline constexpr std::uint8_t kPshufbZero = 0x80;

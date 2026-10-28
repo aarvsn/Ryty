@@ -42,6 +42,9 @@ struct HttpResponse {
     std::string headers;      // raw response header block (CRLF line endings)
     std::string body;         // decoded body (chunked transfer decoding applied)
     std::string error;        // when !ok: what went wrong
+
+    // Returns the trimmed header value for `name` (case-insensitive), or "" if not found.
+    std::string GetHeader(const std::string& name) const;
 };
 
 struct HttpRequest {
@@ -51,6 +54,8 @@ struct HttpRequest {
     std::string path;         // request path including query
     std::string headerBlock;  // extra request headers, CRLF terminated lines
     std::string body;         // request body ("" when none)
+    bool autoRedirect = false;// follow 3xx redirects automatically
+    std::uint32_t maxRedirects = 5;
 };
 
 // Performs one blocking HTTP/1.1 request. `timeoutMs` bounds connect and the

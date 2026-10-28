@@ -120,6 +120,46 @@ std::optional<std::vector<std::uint8_t>> _inPlaceReplacement(const DecodedInstru
     if (instr.IsMwaitx() && _validWait(instr))
         return std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size);
 
+    if (instr.IsSkinit() || instr.IsClgi() || instr.IsStgi() || instr.IsInvlpga() || instr.IsUmonitor())
+        return std::vector<std::uint8_t>{};
+
+    if (instr.IsUmwait() || instr.IsTpause())
+        return std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size);
+
+    if (instr.IsPrefetch3dnow()) {
+        if (opcodeOffset + 2 >= instr.Length)
+            return std::nullopt;
+        std::vector<std::uint8_t> replacement(instr.Data, instr.Data + instr.Length);
+        replacement[opcodeOffset + 1] = 0x18;
+        replacement[opcodeOffset + 2] = static_cast<std::uint8_t>((replacement[opcodeOffset + 2] & ~0x38) | 0x08);
+        return replacement;
+    }
+
+    if (instr.IsClflushopt()) {
+        std::vector<std::uint8_t> replacement(instr.Data, instr.Data + instr.Length);
+        for (std::size_t i = 0; i < opcodeOffset; ++i) {
+            if (replacement[i] == X64OpcodeConstants::PrefixOperandSize) {
+                replacement[i] = 0x90;
+                break;
+            }
+        }
+        return replacement;
+    }
+
+    if (instr.IsClwb()) {
+        if (opcodeOffset + 2 >= instr.Length)
+            return std::nullopt;
+        std::vector<std::uint8_t> replacement(instr.Data, instr.Data + instr.Length);
+        for (std::size_t i = 0; i < opcodeOffset; ++i) {
+            if (replacement[i] == X64OpcodeConstants::PrefixOperandSize) {
+                replacement[i] = 0x90;
+                break;
+            }
+        }
+        replacement[opcodeOffset + 2] = static_cast<std::uint8_t>((replacement[opcodeOffset + 2] & ~0x38) | 0x38);
+        return replacement;
+    }
+
     return std::nullopt;
 }
 
@@ -278,11 +318,23 @@ std::optional<Amd64OnlyMatch> Amd64OnlyInstructionMatcher::Match(
     if (instr.IsFemms())
         return _inPlace(kFemms, length, std::vector<std::uint8_t>{X64OpcodeConstants::TwoByteOpcodeEscape, X64OpcodeConstants::TwoByteEmms});
 
-    if (instr.IsPrefetchw() || instr.IsRdpid()) {
+    if (instr.IsSkinit()) return _inPlace(kSkinit, length, {});
+    if (instr.IsClgi()) return _inPlace(kClgi, length, {});
+    if (instr.IsStgi()) return _inPlace(kStgi, length, {});
+    if (instr.IsInvlpga()) return _inPlace(kInvlpga, length, {});
+    if (instr.IsUmonitor()) return _inPlace(kUmonitor, length, {});
+    if (instr.IsUmwait()) return _inPlace(kUmwait, length, std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size));
+    if (instr.IsTpause()) return _inPlace(kTpause, length, std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size));
+
+    if (instr.IsPrefetchw() || instr.IsRdpid() || instr.IsPrefetch3dnow() || instr.IsClflushopt() || instr.IsClwb()) {
         const auto replacement = _inPlaceReplacement(instr);
         if (!replacement)
             return std::nullopt;
-        return _inPlace(instr.IsRdpid() ? kRdpid : kPrefetchw, length, std::move(*replacement));
+        const auto& entry = instr.IsRdpid() ? kRdpid :
+                            (instr.IsPrefetchw() ? kPrefetchw :
+                            (instr.IsPrefetch3dnow() ? kPrefetch3dnow :
+                            (instr.IsClflushopt() ? kClflushopt : kClwb)));
+        return _inPlace(entry, length, std::move(*replacement));
     }
 
     return std::nullopt;

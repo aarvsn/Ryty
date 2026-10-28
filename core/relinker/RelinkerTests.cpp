@@ -6,6 +6,7 @@
 #include <relinker/analysis/SyscallScanner.hpp>
 #include <elfpatcher/macos/MacOsElfPatcher.hpp>
 #include <codegen/IInstructionScanner.hpp>
+#include <codegen/x86/IAmd64OnlyInstructionMatcher.hpp>
 #include <filesystem>
 #include <fstream>
 
@@ -274,6 +275,14 @@ void TestRytyNetBridge() {
     assert(port == 8080);
     assert(path == "/api/v1");
 
+    // Test GetHeader helper
+    RytyNet::HttpResponse resp;
+    resp.headers = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nLocation: http://example.com/login\r\nServer: RytyServer/1.0\r\n\r\n";
+    assert(resp.GetHeader("content-type") == "text/html; charset=utf-8");
+    assert(resp.GetHeader("LOCATION") == "http://example.com/login");
+    assert(resp.GetHeader("Server") == "RytyServer/1.0");
+    assert(resp.GetHeader("NonExistent") == "");
+
     RytyNetSetEnabled(1);
     assert(RytyNetIsEnabled() == 1);
 
@@ -281,6 +290,104 @@ void TestRytyNetBridge() {
     assert(RytyNetIsEnabled() == 0);
 
     RytyNetSetEnabled(-1); // restore default
+    std::cout << "  -> PASSED!\n";
+}
+
+void TestIntelCpuLowering() {
+    std::cout << "[Test] Running TestIntelCpuLowering...\n";
+    auto matcher = Codegen::MakeAmd64OnlyInstructionMatcher();
+
+    // 1. AMD SVM instructions (3 bytes each)
+    {
+        const std::uint8_t skinit[] = {0x0F, 0x01, 0xDE};
+        auto match = matcher->Match(skinit, sizeof(skinit));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "SKINIT");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes.size() == 3);
+        assert(match->ReplacementBytes[0] == 0x0F && match->ReplacementBytes[1] == 0x1F && match->ReplacementBytes[2] == 0x00);
+    }
+    {
+        const std::uint8_t clgi[] = {0x0F, 0x01, 0xDD};
+        auto match = matcher->Match(clgi, sizeof(clgi));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "CLGI");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
+    {
+        const std::uint8_t stgi[] = {0x0F, 0x01, 0xDC};
+        auto match = matcher->Match(stgi, sizeof(stgi));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "STGI");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
+    {
+        const std::uint8_t invlpga[] = {0x0F, 0x01, 0xDF};
+        auto match = matcher->Match(invlpga, sizeof(invlpga));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "INVLPGA");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
+
+    // 2. 3DNow! PREFETCH -> PREFETCHT0
+    {
+        const std::uint8_t prefetch3d[] = {0x0F, 0x0D, 0x00}; // prefetch [rax]
+        auto match = matcher->Match(prefetch3d, sizeof(prefetch3d));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "PREFETCH");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes.size() == 3);
+        assert(match->ReplacementBytes[1] == 0x18); // PREFETCHT0 opcode
+        assert((match->ReplacementBytes[2] & 0x38) == 0x08); // ModRM reg = 1
+    }
+
+    // 3. CLFLUSHOPT -> NOP + CLFLUSH
+    {
+        const std::uint8_t clflushopt[] = {0x66, 0x0F, 0xAE, 0x38}; // clflushopt [rax]
+        auto match = matcher->Match(clflushopt, sizeof(clflushopt));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "CLFLUSHOPT");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes[0] == 0x90); // 66 prefix replaced by NOP
+        assert(match->ReplacementBytes[1] == 0x0F && match->ReplacementBytes[2] == 0xAE);
+    }
+
+    // 4. CLWB -> NOP + CLFLUSH
+    {
+        const std::uint8_t clwb[] = {0x66, 0x0F, 0xAE, 0x30}; // clwb [rax] (modrm reg = 6)
+        auto match = matcher->Match(clwb, sizeof(clwb));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "CLWB");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes[0] == 0x90);
+        assert((match->ReplacementBytes[3] & 0x38) == 0x38); // ModRM reg converted to 7 (CLFLUSH)
+    }
+
+    // 5. User-level wait instructions
+    {
+        const std::uint8_t umonitor[] = {0xF3, 0x0F, 0xAE, 0xF0}; // umonitor eax
+        auto match = matcher->Match(umonitor, sizeof(umonitor));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "UMONITOR");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
+    {
+        const std::uint8_t umwait[] = {0xF2, 0x0F, 0xAE, 0xF0}; // umwait eax
+        auto match = matcher->Match(umwait, sizeof(umwait));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "UMWAIT");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes[0] == 0xF3 && match->ReplacementBytes[1] == 0x90); // PAUSE
+    }
+    {
+        const std::uint8_t tpause[] = {0x66, 0x0F, 0xAE, 0xF0}; // tpause eax
+        auto match = matcher->Match(tpause, sizeof(tpause));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "TPAUSE");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes[0] == 0xF3 && match->ReplacementBytes[1] == 0x90); // PAUSE
+    }
+
     std::cout << "  -> PASSED!\n";
 }
 
@@ -403,6 +510,7 @@ int main() {
     TestByteIo();
     TestGuestModulePath();
     TestRytyNetBridge();
+    TestIntelCpuLowering();
     std::cout << "All Ryty Relinker Unit Tests Passed Successfully!\n";
     return 0;
 }

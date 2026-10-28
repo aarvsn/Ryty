@@ -160,6 +160,31 @@ bool LogEnabled() {
     return enabled;
 }
 
+std::string HttpResponse::GetHeader(const std::string& name) const {
+    if (headers.empty()) return "";
+    std::string lowerName = name;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::size_t lineStart = 0;
+    while (lineStart < headers.size()) {
+        std::size_t lineEnd = headers.find("\r\n", lineStart);
+        if (lineEnd == std::string::npos) lineEnd = headers.size();
+        const std::string line = headers.substr(lineStart, lineEnd - lineStart);
+        const auto colon = line.find(':');
+        if (colon != std::string::npos) {
+            std::string headerName = line.substr(0, colon);
+            std::transform(headerName.begin(), headerName.end(), headerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (headerName == lowerName) {
+                std::string val = line.substr(colon + 1);
+                while (!val.empty() && (val.front() == ' ' || val.front() == '\t')) val.erase(val.begin());
+                while (!val.empty() && (val.back() == ' ' || val.back() == '\t' || val.back() == '\r' || val.back() == '\n')) val.pop_back();
+                return val;
+            }
+        }
+        lineStart = lineEnd + 2;
+    }
+    return "";
+}
+
 bool ParseHttpUrl(const std::string& url, bool& isHttps, std::string& host, std::uint16_t& port, std::string& path) {
     const auto schemeEnd = url.find("://");
     if (schemeEnd == std::string::npos) return false;
@@ -315,7 +340,7 @@ std::string decodeChunkedBody(const std::string& raw, std::size_t bodyStart) {
 
 }
 
-HttpResponse PerformHttpRequest(const HttpRequest& request, std::uint32_t timeoutMs) {
+HttpResponse PerformHttpRequestSingle(const HttpRequest& request, std::uint32_t timeoutMs) {
     HttpResponse response;
     if (timeoutMs == 0) timeoutMs = DefaultTimeoutMs;
     if (!Bridge().enabled) {
@@ -422,6 +447,56 @@ HttpResponse PerformHttpRequest(const HttpRequest& request, std::uint32_t timeou
     response.ok = true;
     log("%s %s:%u -> status=%d body=%zu", request.method.c_str(), request.host.c_str(), request.port, response.status, response.body.size());
     return response;
+}
+
+HttpResponse PerformHttpRequest(const HttpRequest& request, std::uint32_t timeoutMs) {
+    HttpRequest currentRequest = request;
+    std::uint32_t redirectsFollowed = 0;
+    while (true) {
+        HttpResponse response = PerformHttpRequestSingle(currentRequest, timeoutMs);
+        if (!response.ok || !currentRequest.autoRedirect) {
+            return response;
+        }
+        if (response.status != 301 && response.status != 302 && response.status != 303 &&
+            response.status != 307 && response.status != 308) {
+            return response;
+        }
+        if (redirectsFollowed >= currentRequest.maxRedirects) {
+            log("too many redirects followed (%u)", redirectsFollowed);
+            response.ok = false;
+            response.error = "too many redirects";
+            return response;
+        }
+        std::string location = response.GetHeader("Location");
+        if (location.empty()) {
+            return response;
+        }
+        log("following redirect %d to %s", response.status, location.c_str());
+        redirectsFollowed++;
+        bool isHttps = false;
+        std::string newHost, newPath;
+        std::uint16_t newPort = 80;
+        if (ParseHttpUrl(location, isHttps, newHost, newPort, newPath)) {
+            if (isHttps) {
+                response.ok = false;
+                response.error = "redirect target uses TLS (https) which is unsupported";
+                return response;
+            }
+            currentRequest.host = newHost;
+            currentRequest.port = newPort;
+            currentRequest.path = newPath;
+        } else if (!location.empty() && location.front() == '/') {
+            currentRequest.path = location;
+        } else {
+            response.ok = false;
+            response.error = "invalid redirect Location: " + location;
+            return response;
+        }
+        if (response.status == 302 || response.status == 303) {
+            currentRequest.method = "GET";
+            currentRequest.body.clear();
+        }
+    }
 }
 
 }

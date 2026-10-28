@@ -132,6 +132,7 @@ void sendThroughBridge(int requestId) {
     outgoing.path = path;
     outgoing.headerBlock = request->headerBlock;
     outgoing.body = request->body;
+    outgoing.autoRedirect = request->autoRedirect;
     std::uint32_t timeoutMs = 0;
     if (request->recvTimeoutUs > 0) timeoutMs = request->recvTimeoutUs / 1000;
     else if (request->connectTimeoutUs > 0) timeoutMs = request->connectTimeoutUs / 1000;
