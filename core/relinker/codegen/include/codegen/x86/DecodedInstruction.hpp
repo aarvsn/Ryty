@@ -27,6 +27,16 @@ struct DecodedInstruction {
     [[nodiscard]] bool IsFemms() const;
     [[nodiscard]] bool IsMovntss() const;
     [[nodiscard]] bool IsMovntsd() const;
+    [[nodiscard]] bool IsSkinit() const;
+    [[nodiscard]] bool IsClgi() const;
+    [[nodiscard]] bool IsStgi() const;
+    [[nodiscard]] bool IsInvlpga() const;
+    [[nodiscard]] bool IsPrefetch3dnow() const;
+    [[nodiscard]] bool IsClflushopt() const;
+    [[nodiscard]] bool IsClwb() const;
+    [[nodiscard]] bool IsUmonitor() const;
+    [[nodiscard]] bool IsUmwait() const;
+    [[nodiscard]] bool IsTpause() const;
 
 private:
     [[nodiscard]] std::size_t _skipPrefixesAndRex(bool* outHasOperandSizePrefix, bool* outHasRepnePrefix, bool* outHasRepPrefix) const;
