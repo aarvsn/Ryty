@@ -1,6 +1,6 @@
 # RytyNet (experimental online mode)
 
-RytyNet is the Ryty 1.0.7 online-mode bridge. It gives the ported game's
+RytyNet is the Ryty online-mode bridge. It gives the ported game's
 network libraries a direct path onto the host's TCP/IP stack instead of the
 offline error returns the runtime uses by default. It is **experimental**:
 the surface it covers today is plain HTTP/1.1 over TCP plus a signed-in

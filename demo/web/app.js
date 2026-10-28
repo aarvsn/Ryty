@@ -231,7 +231,7 @@ function renderSummary(elf, rytyNet) {
     document.getElementById("neededCount").textContent = elf.neededLibs.length;
 
     const logBox = document.getElementById("portLog");
-    logBox.textContent = `[ryty-web v1.0.9] Starting web porting pipeline...
+    logBox.textContent = `[ryty-web v1.1.0] Starting web porting pipeline...
 [relinker] File parsed successfully (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)
 [console] Auto-detected console target: ${elf.detectedConsole.toUpperCase()}
 [target] Converting executable to ${elf.targetOs.toUpperCase()} native target
@@ -301,7 +301,7 @@ function renderNids(symbols) {
 function renderReport(elf, targetOs, rytyNet, unusedFilter) {
     const report = {
         tool: "Ryty Web Studio",
-        version: "1.0.9",
+        version: "1.1.0",
         targetOs: targetOs,
         console: elf.detectedConsole,
         relinker: {

@@ -3,6 +3,13 @@
 Releases before 1.0.7 predate this file; their history lives in the commit
 log and the existing documentation.
 
+## 1.1.0
+
+### Versioning and Infrastructure Cleanup
+* Bumped project version to 1.1.0 across all components, including the relinker CLI, Qt6 GUI (`ryty-gui`), Metal API bridge (`core/libs/metal`), RytyNet online bridge (`libRytyNet`), web porting studio (`demo/web`), and macOS patcher `LC_SOURCE_VERSION` (`1.1.0.0`).
+* Updated test assertions in C++ unit tests and Python signature validation suite for version 1.1.0 compatibility.
+* Reviewed and updated repository documentation (`TechnicalDebt.md`, `GPU_SUPPORT.md`, `RYTNET.md`, `docs/README.md`) to reflect full AMD instruction lowering coverage and current architecture specifications.
+
 ## 1.0.9
 
 ### Relinker Hardening

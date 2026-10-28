@@ -243,7 +243,7 @@ void TestMetalBridge() {
     assert(RytyMetalSupportsFeatureSet(0) != 0);
     RytyMetalSetSampleCount(4);
     RytyMetalSetRasterizerDiscardEnabled(0);
-    assert(RytyMetalGetDeviceCapabilities() == 0x00010009);
+    assert(RytyMetalGetDeviceCapabilities() == 0x00010100);
 
     std::cout << "  -> PASSED!\n";
 }
@@ -263,7 +263,7 @@ void TestByteIo() {
 
 void TestRytyNetBridge() {
     std::cout << "[Test] Running TestRytyNetBridge...\n";
-    assert(RytyNetVersion() == 0x00010009u);
+    assert(RytyNetVersion() == 0x00010100u);
 
     bool isHttps = false;
     std::string host, path;
