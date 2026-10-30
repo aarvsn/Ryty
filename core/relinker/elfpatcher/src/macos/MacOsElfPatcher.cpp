@@ -104,7 +104,7 @@ extern "C" void RytyMetalSetRasterizerDiscardEnabled(int enabled) {
     (void)enabled;
 }
 extern "C" int RytyMetalGetDeviceCapabilities(void) {
-    return 0x00010100;
+    return 0x00010101;
 }
 #endif
 
@@ -338,7 +338,7 @@ std::vector<std::uint8_t> makeSourceVersionCommand() {
     auto* cmd = reinterpret_cast<SourceVersionCommand*>(buf.data());
     cmd->Cmd = LC_SOURCE_VERSION;
     cmd->CmdSize = sizeof(SourceVersionCommand);
-    cmd->Version = 0x0001000001000000ULL; // 1.1.0.0
+    cmd->Version = 0x0001000001010000ULL; // 1.1.1.0
     return buf;
 }
 

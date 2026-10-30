@@ -30,7 +30,8 @@ nonzero exit code; nothing is silently approximated.
 | `--report <file>` | Write a JSON porting report (see below). |
 | `--rpath <path>` | Library search path baked into the output (default `$ORIGIN/libs`). |
 | `--lazy-binding` | Use lazy PLT binding. |
-| `--windows-gui` | Mark the Windows output as a GUI subsystem binary (requires `--windows`). |
+| `--windows-gui` | Mark the Windows output as a GUI subsystem binary (requires `--windows`). Default behavior since v1.1.1. |
+| `--windows-console` | Mark the Windows output as a Console subsystem binary (requires `--windows`). |
 | `--windows-diagnostics` | Add Windows dependency diagnostics (requires `--windows`). |
 | `--autorun` | Launch the ported executable after a successful port. |
 

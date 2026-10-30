@@ -120,11 +120,6 @@ void sendThroughBridge(int requestId) {
         request->response.error = "invalid URL";
         return;
     }
-    if (isHttps) {
-        request->tlsRequested = true;
-        request->response.error = "the experimental RytyNet bridge does not support TLS";
-        return;
-    }
     RytyNet::HttpRequest outgoing;
     outgoing.method = request->method;
     outgoing.host = host;
@@ -133,6 +128,12 @@ void sendThroughBridge(int requestId) {
     outgoing.headerBlock = request->headerBlock;
     outgoing.body = request->body;
     outgoing.autoRedirect = request->autoRedirect;
+    outgoing.isHttps = isHttps;
+    if (isHttps) {
+        request->tlsRequested = true;
+        request->response = RytyNet::PerformHttpRequest(outgoing, 0);
+        return;
+    }
     std::uint32_t timeoutMs = 0;
     if (request->recvTimeoutUs > 0) timeoutMs = request->recvTimeoutUs / 1000;
     else if (request->connectTimeoutUs > 0) timeoutMs = request->connectTimeoutUs / 1000;
@@ -297,7 +298,9 @@ int APS5_VABI sceHttpSendRequest(int request_id, const void* post_data, size_t s
     sendThroughBridge(request_id);
     std::lock_guard lock(stateMutex);
     const auto* request = findRequest(request_id);
-    if (!request || !request->response.ok) return ERROR_NETWORK;
+    if (!request) return ERROR_NETWORK;
+    if (request->tlsRequested) return ERROR_SSL;
+    if (!request->response.ok) return ERROR_NETWORK;
     return 0;
 }
 
