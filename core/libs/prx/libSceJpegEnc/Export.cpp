@@ -18,6 +18,7 @@ constexpr std::int32_t SCE_JPEG_ENC_ERROR_INVALID_ADDR = static_cast<std::int32_
 constexpr std::int32_t SCE_JPEG_ENC_ERROR_INVALID_SIZE = static_cast<std::int32_t>(0x80650102);
 constexpr std::int32_t SCE_JPEG_ENC_ERROR_INVALID_PARAM = static_cast<std::int32_t>(0x80650103);
 constexpr std::int32_t SCE_JPEG_ENC_ERROR_INVALID_HANDLE = static_cast<std::int32_t>(0x80650104);
+constexpr std::int32_t SCE_JPEG_ERROR_UNSUPPORTED_SAMPLING = static_cast<std::int32_t>(0x80650105);
 
 constexpr std::uint32_t ATTRIBUTE_NONE = 0;
 constexpr std::uint32_t MEMORY_SIZE = 0x800;
@@ -83,6 +84,10 @@ std::int32_t validateEncodeParam(const JpegEncEncodeParam* param) {
     }
     if (param->restart_interval > static_cast<std::int32_t>(MAX_IMAGE_DIMENSION)) return SCE_JPEG_ENC_ERROR_INVALID_PARAM;
 
+    if (param->sampling_type == SAMPLING_TYPE_422 || param->pixel_format == PIXEL_FORMAT_Y8 || param->color_space == COLOR_SPACE_GRAYSCALE) {
+        return SCE_JPEG_ERROR_UNSUPPORTED_SAMPLING;
+    }
+
     switch (param->pixel_format) {
     case PIXEL_FORMAT_R8G8B8A8:
     case PIXEL_FORMAT_B8G8R8A8:
@@ -92,10 +97,6 @@ std::int32_t validateEncodeParam(const JpegEncEncodeParam* param) {
     case PIXEL_FORMAT_Y8U8Y8V8:
         if (param->image_pitch / 2 < ((param->image_width + 1) & ~1u)) return SCE_JPEG_ENC_ERROR_INVALID_PARAM;
         if (param->color_space != COLOR_SPACE_YCC || param->sampling_type == SAMPLING_TYPE_FULL) return SCE_JPEG_ENC_ERROR_INVALID_PARAM;
-        return 0;
-    case PIXEL_FORMAT_Y8:
-        if (param->image_pitch < param->image_width) return SCE_JPEG_ENC_ERROR_INVALID_PARAM;
-        if (param->color_space != COLOR_SPACE_GRAYSCALE || param->sampling_type != SAMPLING_TYPE_FULL) return SCE_JPEG_ENC_ERROR_INVALID_PARAM;
         return 0;
     default:
         return SCE_JPEG_ENC_ERROR_INVALID_PARAM;

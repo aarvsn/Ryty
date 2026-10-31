@@ -1,6 +1,6 @@
 # Ryty Web - PS4 / PS5 Web-Based Executable Porting Studio
 
-`demo/web` is an interactive browser application for inspecting, analyzing, and porting PlayStation 4 and PlayStation 5 executables (`eboot.elf`, PRX dynamic modules) using the Ryty v1.1.0 relinker engine specifications.
+`demo/web` is an interactive browser application for inspecting, analyzing, and porting PlayStation 4 and PlayStation 5 executables (`eboot.elf`, PRX dynamic modules) using the Ryty v1.1.1 relinker engine specifications.
 
 Inspired by AnyPS5 `demo/web`, this Web application provides:
 

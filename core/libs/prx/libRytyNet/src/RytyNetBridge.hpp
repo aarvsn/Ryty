@@ -56,6 +56,7 @@ struct HttpRequest {
     std::string body;         // request body ("" when none)
     bool autoRedirect = false;// follow 3xx redirects automatically
     std::uint32_t maxRedirects = 5;
+    bool isHttps = false;
 };
 
 // Performs one blocking HTTP/1.1 request. `timeoutMs` bounds connect and the

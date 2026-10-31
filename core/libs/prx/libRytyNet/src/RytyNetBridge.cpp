@@ -347,6 +347,11 @@ HttpResponse PerformHttpRequestSingle(const HttpRequest& request, std::uint32_t 
         response.error = "RytyNet is disabled";
         return response;
     }
+    if (request.isHttps) {
+        log("HTTPS not supported");
+        response.error = "HTTPS not supported";
+        return response;
+    }
     // Resolve the host (name or literal) and connect a plain TCP socket.
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
@@ -407,7 +412,7 @@ HttpResponse PerformHttpRequestSingle(const HttpRequest& request, std::uint32_t 
     wire += "Connection: close\r\n";
     wire += request.headerBlock;
     if (wire.find("User-Agent:") == std::string::npos) {
-        wire += "User-Agent: RytyNet/1.1.0 (experimental)\r\n";
+        wire += "User-Agent: RytyNet/1.1.1 (experimental)\r\n";
     }
     wire += "\r\n";
     wire += request.body;

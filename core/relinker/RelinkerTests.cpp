@@ -5,6 +5,8 @@
 #include <relinker/guest/GuestImage.hpp>
 #include <relinker/analysis/SyscallScanner.hpp>
 #include <elfpatcher/macos/MacOsElfPatcher.hpp>
+#include <elfpatcher/windows/WindowsElfPatcher.hpp>
+#include <elfpatcher/windows/WindowsPeWriter.hpp>
 #include <codegen/IInstructionScanner.hpp>
 #include <codegen/x86/IAmd64OnlyInstructionMatcher.hpp>
 #include <filesystem>
@@ -66,11 +68,39 @@ void TestCliArgs() {
         assert(args.outputPath == "output.bin");
     }
     {
-        const char* argv[] = {"ryty", "--console", "ps5", "--windows", "in.elf", "out.exe"};
-        auto args = Cli::ParseArgs(6, const_cast<char**>(argv));
+        const char* argv[] = {"ryty", "--console", "ps5", "--windows", "--windows-console", "in.elf", "out.exe"};
+        auto args = Cli::ParseArgs(7, const_cast<char**>(argv));
         assert(args.consoleMode == Cli::ConsoleMode::PS5);
         assert(args.toWindows == true);
+        assert(args.windowsConsole == true);
     }
+    std::cout << "  -> PASSED!\n";
+}
+
+void TestWindowsPeSubsystem() {
+    std::cout << "[Test] Running TestWindowsPeSubsystem...\n";
+    std::vector<Elfpatcher::Windows::PeSection> sections;
+    sections.push_back({".text", Elfpatcher::Windows::LoadRva, 0x20000020u, {0xc3, 0x90, 0x90, 0x90}});
+    std::array<Elfpatcher::Windows::PeDirectory, 16> directories{};
+
+    // Default: GUI subsystem (2)
+    {
+        Elfpatcher::Windows::WindowsPeWriter writer;
+        auto pe = writer.Write(sections, Elfpatcher::Windows::LoadRva, directories, false);
+        std::uint16_t subsystem = 0;
+        std::memcpy(&subsystem, pe.data() + 0x80 + 24 + 68, 2);
+        assert(subsystem == 2); // IMAGE_SUBSYSTEM_WINDOWS_GUI
+    }
+
+    // Windows Console requested: Console subsystem (3)
+    {
+        Elfpatcher::Windows::WindowsPeWriter writer;
+        auto pe = writer.Write(sections, Elfpatcher::Windows::LoadRva, directories, true);
+        std::uint16_t subsystem = 0;
+        std::memcpy(&subsystem, pe.data() + 0x80 + 24 + 68, 2);
+        assert(subsystem == 3); // IMAGE_SUBSYSTEM_WINDOWS_CUI
+    }
+
     std::cout << "  -> PASSED!\n";
 }
 
@@ -244,7 +274,7 @@ void TestMetalBridge() {
     assert(RytyMetalSupportsFeatureSet(0) != 0);
     RytyMetalSetSampleCount(4);
     RytyMetalSetRasterizerDiscardEnabled(0);
-    assert(RytyMetalGetDeviceCapabilities() == 0x00010100);
+    assert(RytyMetalGetDeviceCapabilities() == 0x00010101);
 
     std::cout << "  -> PASSED!\n";
 }
@@ -264,7 +294,7 @@ void TestByteIo() {
 
 void TestRytyNetBridge() {
     std::cout << "[Test] Running TestRytyNetBridge...\n";
-    assert(RytyNetVersion() == 0x00010100u);
+    assert(RytyNetVersion() == 0x00010101u);
 
     bool isHttps = false;
     std::string host, path;
@@ -285,6 +315,16 @@ void TestRytyNetBridge() {
 
     RytyNetSetEnabled(1);
     assert(RytyNetIsEnabled() == 1);
+
+    // Test HTTPS request handling in bridge
+    RytyNet::HttpRequest httpsReq;
+    httpsReq.isHttps = true;
+    httpsReq.host = "example.com";
+    httpsReq.port = 443;
+    httpsReq.path = "/";
+    auto httpsResp = RytyNet::PerformHttpRequest(httpsReq, 1000);
+    assert(!httpsResp.ok);
+    assert(httpsResp.error == "HTTPS not supported");
 
     RytyNetSetEnabled(0);
     assert(RytyNetIsEnabled() == 0);
@@ -504,6 +544,7 @@ void TestGuestModulePath() {
 int main() {
     std::cout << "Starting Ryty Relinker Unit Tests...\n";
     TestCliArgs();
+    TestWindowsPeSubsystem();
     TestPs4Detection();
     TestMacOsPatcher();
     TestMetalBridge();

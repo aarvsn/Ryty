@@ -69,6 +69,8 @@ Args ParseArgs(int argc, char* argv[]) {
             args.windowsDiagnostics = true;
         } else if (arg == "--windows-gui") {
             args.windowsGui = true;
+        } else if (arg == "--windows-console") {
+            args.windowsConsole = true;
         } else if (arg == "--rytynet") {
             args.rytyNet = true;
         } else if (arg.rfind("--", 0) == 0 || arg == "unused-filter") {
@@ -94,9 +96,12 @@ Args ParseArgs(int argc, char* argv[]) {
     if (args.windowsGui && !args.toWindows)
         throw std::runtime_error("--windows-gui requires --windows");
 
+    if (args.windowsConsole && !args.toWindows)
+        throw std::runtime_error("--windows-console requires --windows");
+
     if (args.inputPath.empty() || args.outputPath.empty())
         throw std::runtime_error(
-            "Usage: ryty [--windows|--macos] [--ps4|--ps5|--console auto|ps4|ps5] [--windows-diagnostics] [--windows-gui] [--rytynet] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>] [--lazy-binding] [--autorun] <input.elf> <output.elf>\n"
+            "Usage: ryty [--windows|--macos] [--ps4|--ps5|--console auto|ps4|ps5] [--windows-diagnostics] [--windows-gui] [--windows-console] [--rytynet] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>] [--lazy-binding] [--autorun] <input.elf> <output.elf>\n"
             "Example: ryty input.elf output.elf"
         );
 

@@ -3,6 +3,17 @@
 Releases before 1.0.7 predate this file; their history lives in the commit
 log and the existing documentation.
 
+## 1.1.1
+
+### Bug Fixes and Coverage Patch
+* **Windows PE Subsystem**: Default PE subsystem set to GUI mode (`IMAGE_SUBSYSTEM_WINDOWS_GUI`) to prevent console windows from launching when running games; added `--windows-console` flag for explicit console output.
+* **libSceJpegEnc Subsampling**: Returns `SCE_JPEG_ERROR_UNSUPPORTED_SAMPLING` (`0x80650105`) for 4:2:2 and grayscale encoding requests, documenting `stb_image` limitations in `TechnicalDebt.md`.
+* **libSceKeyboard Layout Handling**: `sceKeyboardGetKey2Char` returns `KEYBOARD_ERROR_INVALID_ARG` for Japanese 106-key layout (`KEYBOARD_ARRANGEMENT_106`) instead of throwing `std::runtime_error`.
+* **libSceAudiodec PCM Word Size**: `validateWordSize` returns `SCE_AUDIODEC_ERROR_INVALID_WORD_LENGTH` (`0x807F0010`) for 24-bit PCM (`iBwPcm == 0`) instead of throwing.
+* **libScePlayerInvitationDialog ABI**: Promoted to silent stubs list and added `NotImplemented_nid_no_patch` on `scePlayerInvitationDialogOpen`.
+* **RytyNet TLS Handling**: `libSceHttp` and `libRytyNet` return `ERROR_SSL` (`0x80432021`) when `https://` is requested with RytyNet enabled, logging `[rytynet] HTTPS not supported`.
+* **Version & Coverage**: Updated version string to 1.1.1 across CLI, Qt6 GUI, Metal bridge, RytyNet, web studio, macOS `LC_SOURCE_VERSION`, and unit tests. Updated `COMPATIBILITY.md`.
+
 ## 1.1.0
 
 ### Versioning and Infrastructure Cleanup

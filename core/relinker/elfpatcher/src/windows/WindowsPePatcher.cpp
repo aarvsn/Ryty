@@ -40,7 +40,7 @@ void writeGotStub(std::vector<PeSection>& sections, const std::uint32_t targetRv
 
 }
 
-WindowsPePatcher::WindowsPePatcher(const bool windowsGui) : _windowsGui(windowsGui) {
+WindowsPePatcher::WindowsPePatcher(const bool windowsConsole) : _windowsConsole(windowsConsole) {
 }
 
 std::vector<std::uint8_t> WindowsPePatcher::Patch(const std::vector<std::uint8_t>& sourceElf, const std::vector<Domain::ProgramHeader>& originalHeaders, const Domain::SysVDynamicSection& dynamicSection, const std::uint64_t originalPltGotVaddr, const std::string& runPath, const bool lazyBinding, const bool dependencyDiagnostics, const std::vector<Codegen::TrampolineSite>& trampolines) {
@@ -104,7 +104,7 @@ std::vector<std::uint8_t> WindowsPePatcher::Patch(const std::vector<std::uint8_t
         sections.push_back({".reloc", nextRva, SectionRead | 0x02000040u, std::move(relocationData)});
         nextRva = AlignRva(nextRva + sections.back().Data.size());
     }
-    return WindowsPeWriter().Write(sections, entryRva, directories, _windowsGui);
+    return WindowsPeWriter().Write(sections, entryRva, directories, _windowsConsole);
 }
 
 }

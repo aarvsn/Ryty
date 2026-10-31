@@ -24,6 +24,7 @@ struct Args {
     bool autorun = false;
     bool windowsDiagnostics = false;
     bool windowsGui = false;
+    bool windowsConsole = false;
     // Experimental: enables the RytyNet online-mode bridge for the ported game
     // (a <output>.rytynet marker is written next to the executable; the runtime
     // also honors RTY_NET_ENABLE=1 at any time).

@@ -1,6 +1,7 @@
 #include "prx/libScePlayerInvitationDialog/libScePlayerInvitationDialog.h"
 
 #include <mutex>
+#include "prx/libc/include/General.hpp"
 #include "prx/libc/include/general/LogMacros.hpp"
 
 namespace {
@@ -32,6 +33,7 @@ std::int32_t APS5_VABI scePlayerInvitationDialogOpen(const ScePlayerInvitationDi
         g_dialog_status = PlayerInvitationDialogStatus::Initialized;
     }
     g_dialog_status = PlayerInvitationDialogStatus::Running;
+    NotImplemented_nid_no_patch(__func__);
     return 0;
 }
 

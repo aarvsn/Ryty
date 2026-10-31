@@ -120,7 +120,7 @@ int main(const int argc, char* argv[]) {
 
         std::shared_ptr<Elfpatcher::IElfPatcher> patcher;
         if (args.toWindows) {
-            patcher = std::make_shared<Elfpatcher::Windows::WindowsPePatcher>(args.windowsGui);
+            patcher = std::make_shared<Elfpatcher::Windows::WindowsPePatcher>(args.windowsConsole);
         } else if (args.toMacOs) {
             patcher = std::make_shared<Elfpatcher::MacOs::MacOsElfPatcher>();
         } else {

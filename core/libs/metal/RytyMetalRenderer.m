@@ -319,5 +319,5 @@ void RytyMetalSetRasterizerDiscardEnabled(int enabled) {
 }
 
 int RytyMetalGetDeviceCapabilities(void) {
-    return 0x00010100;
+    return 0x00010101;
 }
