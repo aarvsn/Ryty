@@ -251,6 +251,10 @@ void TestMetalBridge() {
     assert(tex != nullptr);
     uint32_t dummyPixel = 0xff0000ff;
     RytyMetalUpdateTexture2D(tex, &dummyPixel, 4);
+    void* dstTex = RytyMetalCreateTexture2D(256, 256, 80);
+    assert(dstTex != nullptr);
+    RytyMetalCopyTexture(tex, dstTex, 256, 256);
+    RytyMetalDestroyTexture2D(dstTex);
     RytyMetalDestroyTexture2D(tex);
 
     void* buf = RytyMetalCreateBuffer(&dummyPixel, sizeof(dummyPixel));
@@ -261,11 +265,6 @@ void TestMetalBridge() {
     RytyMetalCopyBuffer(buf, 0, dstBuf, 0, sizeof(dummyPixel));
     RytyMetalDestroyBuffer(dstBuf);
     RytyMetalDestroyBuffer(buf);
-
-    void* dstTex = RytyMetalCreateTexture2D(256, 256, 80);
-    assert(dstTex != nullptr);
-    RytyMetalCopyTexture(tex, dstTex, 256, 256);
-    RytyMetalDestroyTexture2D(dstTex);
 
     assert(RytyMetalGetDeviceMaxBufferLength() > 0);
 
