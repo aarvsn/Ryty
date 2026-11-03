@@ -3,6 +3,11 @@
 Releases before 1.0.7 predate this file; their history lives in the commit
 log and the existing documentation.
 
+## 1.1.2
+
+### Versioning and Maintenance
+* **Version Update**: Bumped project version to 1.1.2 across the relinker CLI, Qt6 GUI (`ryty-gui`), Metal API bridge (`core/libs/metal`), RytyNet online bridge (`libRytyNet`), web porting studio (`demo/web`), macOS `LC_SOURCE_VERSION` (`1.1.2.0`), and test suites.
+
 ## 1.1.1
 
 ### Bug Fixes and Coverage Patch
