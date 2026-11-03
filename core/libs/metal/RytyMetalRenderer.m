@@ -242,16 +242,7 @@ void RytyMetalDestroyBuffer(RytyMetalBufferHandle handle) {
 }
 
 void RytyMetalCopyBuffer(RytyMetalBufferHandle srcHandle, unsigned long srcOffset, RytyMetalBufferHandle dstHandle, unsigned long dstOffset, unsigned long length) {
-#if defined(__APPLE__)
-    if (!srcHandle || !dstHandle || length == 0) return;
-    id<MTLBuffer> src = (id<MTLBuffer>)srcHandle;
-    id<MTLBuffer> dst = (id<MTLBuffer>)dstHandle;
-    if (srcOffset + length <= [src length] && dstOffset + length <= [dst length]) {
-        memcpy((uint8_t*)[dst contents] + dstOffset, (const uint8_t*)[src contents] + srcOffset, length);
-    }
-#else
     (void)srcHandle; (void)srcOffset; (void)dstHandle; (void)dstOffset; (void)length;
-#endif
 }
 
 void RytyMetalCopyTexture(RytyMetalTextureHandle srcHandle, RytyMetalTextureHandle dstHandle, int width, int height) {
