@@ -31,9 +31,13 @@ struct DecodedInstruction {
     [[nodiscard]] bool IsClgi() const;
     [[nodiscard]] bool IsStgi() const;
     [[nodiscard]] bool IsInvlpga() const;
+    [[nodiscard]] bool IsVmrun() const;
+    [[nodiscard]] bool IsVmload() const;
+    [[nodiscard]] bool IsVmsave() const;
     [[nodiscard]] bool IsPrefetch3dnow() const;
     [[nodiscard]] bool IsClflushopt() const;
     [[nodiscard]] bool IsClwb() const;
+    [[nodiscard]] bool IsCldemote() const;
     [[nodiscard]] bool IsUmonitor() const;
     [[nodiscard]] bool IsUmwait() const;
     [[nodiscard]] bool IsTpause() const;

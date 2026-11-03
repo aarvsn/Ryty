@@ -24,6 +24,9 @@ void RytyMetalDestroyTexture2D(void* handle);
 void* RytyMetalCreateBuffer(const void* data, unsigned long length);
 void RytyMetalUpdateBuffer(void* handle, const void* data, unsigned long length, unsigned long offset);
 void RytyMetalDestroyBuffer(void* handle);
+void RytyMetalCopyBuffer(void* srcHandle, unsigned long srcOffset, void* dstHandle, unsigned long dstOffset, unsigned long length);
+void RytyMetalCopyTexture(void* srcHandle, void* dstHandle, int width, int height);
+unsigned long RytyMetalGetDeviceMaxBufferLength(void);
 void RytyMetalSetViewport(double x, double y, double width, double height, double znear, double zfar);
 void RytyMetalSetScissorRect(unsigned int x, unsigned int y, unsigned int width, unsigned int height);
 void RytyMetalSetBlendMode(int blendMode);
@@ -253,7 +256,18 @@ void TestMetalBridge() {
     void* buf = RytyMetalCreateBuffer(&dummyPixel, sizeof(dummyPixel));
     assert(buf != nullptr);
     RytyMetalUpdateBuffer(buf, &dummyPixel, sizeof(dummyPixel), 0);
+    void* dstBuf = RytyMetalCreateBuffer(nullptr, sizeof(dummyPixel));
+    assert(dstBuf != nullptr);
+    RytyMetalCopyBuffer(buf, 0, dstBuf, 0, sizeof(dummyPixel));
+    RytyMetalDestroyBuffer(dstBuf);
     RytyMetalDestroyBuffer(buf);
+
+    void* dstTex = RytyMetalCreateTexture2D(256, 256, 80);
+    assert(dstTex != nullptr);
+    RytyMetalCopyTexture(tex, dstTex, 256, 256);
+    RytyMetalDestroyTexture2D(dstTex);
+
+    assert(RytyMetalGetDeviceMaxBufferLength() > 0);
 
     RytyMetalSetViewport(0, 0, 1920, 1080, 0.0, 1.0);
     RytyMetalSetScissorRect(0, 0, 1920, 1080);
@@ -368,6 +382,27 @@ void TestIntelCpuLowering() {
         assert(std::string(match->InstructionName) == "INVLPGA");
         assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
     }
+    {
+        const std::uint8_t vmrun[] = {0x0F, 0x01, 0xD8};
+        auto match = matcher->Match(vmrun, sizeof(vmrun));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "VMRUN");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
+    {
+        const std::uint8_t vmload[] = {0x0F, 0x01, 0xDA};
+        auto match = matcher->Match(vmload, sizeof(vmload));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "VMLOAD");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
+    {
+        const std::uint8_t vmsave[] = {0x0F, 0x01, 0xDB};
+        auto match = matcher->Match(vmsave, sizeof(vmsave));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "VMSAVE");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+    }
 
     // 2. 3DNow! PREFETCH -> PREFETCHT0
     {
@@ -401,6 +436,15 @@ void TestIntelCpuLowering() {
         assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
         assert(match->ReplacementBytes[0] == 0x90);
         assert((match->ReplacementBytes[3] & 0x38) == 0x38); // ModRM reg converted to 7 (CLFLUSH)
+    }
+
+    // 4b. CLDEMOTE -> NOP
+    {
+        const std::uint8_t cldemote[] = {0x0F, 0x1C, 0x00}; // cldemote [rax]
+        auto match = matcher->Match(cldemote, sizeof(cldemote));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "CLDEMOTE");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
     }
 
     // 5. User-level wait instructions

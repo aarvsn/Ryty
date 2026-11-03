@@ -241,6 +241,35 @@ void RytyMetalDestroyBuffer(RytyMetalBufferHandle handle) {
     (void)handle;
 }
 
+void RytyMetalCopyBuffer(RytyMetalBufferHandle srcHandle, unsigned long srcOffset, RytyMetalBufferHandle dstHandle, unsigned long dstOffset, unsigned long length) {
+#if defined(__APPLE__)
+    if (!srcHandle || !dstHandle || length == 0) return;
+    id<MTLBuffer> src = (id<MTLBuffer>)srcHandle;
+    id<MTLBuffer> dst = (id<MTLBuffer>)dstHandle;
+    if (srcOffset + length <= [src length] && dstOffset + length <= [dst length]) {
+        memcpy((uint8_t*)[dst contents] + dstOffset, (const uint8_t*)[src contents] + srcOffset, length);
+    }
+#else
+    (void)srcHandle; (void)srcOffset; (void)dstHandle; (void)dstOffset; (void)length;
+#endif
+}
+
+void RytyMetalCopyTexture(RytyMetalTextureHandle srcHandle, RytyMetalTextureHandle dstHandle, int width, int height) {
+    (void)srcHandle; (void)dstHandle; (void)width; (void)height;
+}
+
+unsigned long RytyMetalGetDeviceMaxBufferLength(void) {
+#if defined(__APPLE__)
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (device && [device respondsToSelector:@selector(maxBufferLength)]) {
+        return (unsigned long)[device maxBufferLength];
+    }
+    return 256UL * 1024UL * 1024UL; // 256MB fallback
+#else
+    return 256UL * 1024UL * 1024UL;
+#endif
+}
+
 void RytyMetalSetViewport(double x, double y, double width, double height, double znear, double zfar) {
     (void)x; (void)y; (void)width; (void)height; (void)znear; (void)zfar;
 }

@@ -58,6 +58,9 @@ void RytyMetalDestroyTexture2D(RytyMetalTextureHandle _Nonnull handle);
 RytyMetalBufferHandle _Nullable RytyMetalCreateBuffer(const void* _Nullable data, unsigned long length);
 void RytyMetalUpdateBuffer(RytyMetalBufferHandle _Nonnull handle, const void* _Nonnull data, unsigned long length, unsigned long offset);
 void RytyMetalDestroyBuffer(RytyMetalBufferHandle _Nonnull handle);
+void RytyMetalCopyBuffer(RytyMetalBufferHandle _Nonnull srcHandle, unsigned long srcOffset, RytyMetalBufferHandle _Nonnull dstHandle, unsigned long dstOffset, unsigned long length);
+void RytyMetalCopyTexture(RytyMetalTextureHandle _Nonnull srcHandle, RytyMetalTextureHandle _Nonnull dstHandle, int width, int height);
+unsigned long RytyMetalGetDeviceMaxBufferLength(void);
 
 void RytyMetalSetViewport(double x, double y, double width, double height, double znear, double zfar);
 void RytyMetalSetScissorRect(unsigned int x, unsigned int y, unsigned int width, unsigned int height);
