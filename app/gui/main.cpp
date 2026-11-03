@@ -7,7 +7,7 @@
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("Ryty");
-    QApplication::setApplicationVersion("1.1.1");
+    QApplication::setApplicationVersion("1.1.2");
     QApplication::setOrganizationName("Ryty");
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
