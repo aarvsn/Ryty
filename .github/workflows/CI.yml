@@ -277,7 +277,7 @@ jobs:
   # ---------------------------------------------------------------- macOS ---
   macos:
     name: macOS (CLI + Metal)
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
