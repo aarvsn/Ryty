@@ -120,7 +120,8 @@ std::optional<std::vector<std::uint8_t>> _inPlaceReplacement(const DecodedInstru
     if (instr.IsMwaitx() && _validWait(instr))
         return std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size);
 
-    if (instr.IsSkinit() || instr.IsClgi() || instr.IsStgi() || instr.IsInvlpga() || instr.IsUmonitor())
+    if (instr.IsSkinit() || instr.IsClgi() || instr.IsStgi() || instr.IsInvlpga() ||
+        instr.IsVmrun() || instr.IsVmload() || instr.IsVmsave() || instr.IsUmonitor())
         return std::vector<std::uint8_t>{};
 
     if (instr.IsUmwait() || instr.IsTpause())
@@ -158,6 +159,11 @@ std::optional<std::vector<std::uint8_t>> _inPlaceReplacement(const DecodedInstru
         }
         replacement[opcodeOffset + 2] = static_cast<std::uint8_t>((replacement[opcodeOffset + 2] & ~0x38) | 0x38);
         return replacement;
+    }
+
+    if (instr.IsCldemote()) {
+        // CLDEMOTE [mem] (0F 1C /0): lower to NOPs preserving instruction length
+        return std::vector<std::uint8_t>{};
     }
 
     return std::nullopt;
@@ -322,6 +328,10 @@ std::optional<Amd64OnlyMatch> Amd64OnlyInstructionMatcher::Match(
     if (instr.IsClgi()) return _inPlace(kClgi, length, {});
     if (instr.IsStgi()) return _inPlace(kStgi, length, {});
     if (instr.IsInvlpga()) return _inPlace(kInvlpga, length, {});
+    if (instr.IsVmrun()) return _inPlace(kVmrun, length, {});
+    if (instr.IsVmload()) return _inPlace(kVmload, length, {});
+    if (instr.IsVmsave()) return _inPlace(kVmsave, length, {});
+    if (instr.IsCldemote()) return _inPlace(kCldemote, length, {});
     if (instr.IsUmonitor()) return _inPlace(kUmonitor, length, {});
     if (instr.IsUmwait()) return _inPlace(kUmwait, length, std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size));
     if (instr.IsTpause()) return _inPlace(kTpause, length, std::vector<std::uint8_t>(kPause.Bytes, kPause.Bytes + kPause.Size));

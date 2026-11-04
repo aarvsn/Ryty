@@ -17,6 +17,10 @@ lowering kinds exist:
 | ----------- | -------- | -------- | -------- |
 | MONITORX | `0F 01 FA` | in place | replaced by nops |
 | MWAITX | `0F 01 FB` | in place | replaced by `pause` |
+| VMRUN | `0F 01 D8` | in place | replaced by nops |
+| VMLOAD | `0F 01 DA` | in place | replaced by nops |
+| VMSAVE | `0F 01 DB` | in place | replaced by nops |
+| CLDEMOTE | `0F 1C /0` | in place | replaced by nops |
 | CLZERO | `0F 01 FC` | trampoline | cache-line aligned non-temporal stores |
 | RDPRU | `0F 01 FD` | trampoline | returns `EDX:EAX = 0` (no MSR access on Intel) |
 | MCOMMIT | `F3 0F 01 FA` | in place | replaced by a 4-byte nop |

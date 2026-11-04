@@ -48,6 +48,15 @@ extern "C" void RytyMetalUpdateBuffer(void* handle, const void* data, unsigned l
 extern "C" void RytyMetalDestroyBuffer(void* handle) {
     (void)handle;
 }
+extern "C" void RytyMetalCopyBuffer(void* srcHandle, unsigned long srcOffset, void* dstHandle, unsigned long dstOffset, unsigned long length) {
+    (void)srcHandle; (void)srcOffset; (void)dstHandle; (void)dstOffset; (void)length;
+}
+extern "C" void RytyMetalCopyTexture(void* srcHandle, void* dstHandle, int width, int height) {
+    (void)srcHandle; (void)dstHandle; (void)width; (void)height;
+}
+extern "C" unsigned long RytyMetalGetDeviceMaxBufferLength(void) {
+    return 256UL * 1024UL * 1024UL;
+}
 extern "C" void RytyMetalSetViewport(double x, double y, double width, double height, double znear, double zfar) {
     (void)x; (void)y; (void)width; (void)height; (void)znear; (void)zfar;
 }
