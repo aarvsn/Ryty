@@ -172,7 +172,7 @@ jobs:
   # -------------------------------------------------------------- Windows ---
   windows:
     name: Windows x86_64 (CLI + Qt6 GUI)
-    runs-on: windows-latest
+    runs-on: windows-2022
     defaults:
       run:
         shell: msys2 {0}
@@ -277,7 +277,7 @@ jobs:
   # ---------------------------------------------------------------- macOS ---
   macos:
     name: macOS (CLI + Metal)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
