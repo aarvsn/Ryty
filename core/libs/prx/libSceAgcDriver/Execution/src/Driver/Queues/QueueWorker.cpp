@@ -1,0 +1,108 @@
+#include "prx/libSceAgcDriver/Execution/include/Driver/Driver.hpp"
+#include "prx/libSceAgcDriver/Execution/include/Driver/Diagnostics.hpp"
+#include "prx/libSceAgcDriver/Execution/include/Driver/Synchronization/SynchronizationStatistics.hpp"
+#include "prx/libSceAgcDriver/Execution/include/Driver/Queues/WorkerAffinity.hpp"
+#include "prx/libSceAgcDriver/Execution/include/GuestMemory.hpp"
+#include "prx/libSceAgcDriver/Execution/include/WorkerSampler.hpp"
+#include <cstdlib>
+
+namespace AgcDriver::DriverDetail {
+
+void Driver::markCompleted(std::uint64_t serial) {
+    completedOutOfOrder.insert(serial);
+    while (!completedOutOfOrder.empty() && *completedOutOfOrder.begin() == completed + 1) {
+        completed = *completedOutOfOrder.begin();
+        completedOutOfOrder.erase(completedOutOfOrder.begin());
+    }
+}
+
+const std::atomic<std::uint64_t>*& Driver::workerQueued() {
+    static thread_local const std::atomic<std::uint64_t>* queued = nullptr;
+    return queued;
+}
+
+void Driver::reapCompletionLabels() {
+    std::unique_lock gpuLock(GuestMemory::GpuMutex(), std::try_to_lock);
+    if (!gpuLock.owns_lock()) {
+        ++triesFailed[TryIdle];
+        return;
+    }
+
+    if (!completionsPending()) return;
+
+    bumpEpoch(&EpochBumps::reaps);
+    if (const auto localDevice = device.Load()) localDevice->ReapRecorded();
+}
+
+void Driver::run(std::uint32_t id) noexcept {
+    onWorkerThread() = true;
+    {
+        char role[32];
+        std::snprintf(role, sizeof role, "queue worker 0x%x", id);
+        PinWorkerThread(role);
+    }
+
+    GuestMemory::TagGpuLockThread(id);
+    if (id == 0) StartWorkerSampler();
+    Submission submission;
+    static const bool profile = std::getenv("APS5_PROFILE_DRAW") != nullptr;
+    auto& costs = submissionCosts(id);
+    try {
+        for (;;) {
+            submission = Submission{};
+            static const bool traceGpu = std::getenv("APS5_TRACE_GPU") != nullptr;
+            {
+                std::unique_lock lock(mutex);
+                auto& worker = workers.at(id);
+                auto& pending = worker.pending;
+                workerQueued() = &worker.queued;
+                if (traceGpu && pending.empty()) std::fprintf(stderr, "[gpu] %.1f idle queue=0x%x\n", TraceMs(), id);
+                const auto ready = [&] { return failure || stopping || !pending.empty(); };
+
+                while (!ready()) {
+                    if (!completionsPending() || (id != 0 && Graphics::Recorder::PendingCompletionLabels() == 0)) {
+                        if (id == 0) queue0Dormant.store(true, std::memory_order_relaxed);
+                        changed.wait(lock, ready);
+                        if (id == 0) queue0Dormant.store(false, std::memory_order_relaxed);
+                        break;
+                    }
+                    if (changed.wait_for(lock, std::chrono::milliseconds(1), ready)) break;
+                    lock.unlock();
+                    reapCompletionLabels();
+                    lock.lock();
+                }
+                rethrowFailure();
+                if (stopping || shutdownToken.stop_requested() || pending.empty()) {
+                    break;
+                }
+                submission = std::move(pending.front());
+                pending.pop_front();
+                worker.queued.fetch_sub(1, std::memory_order_acq_rel);
+                if (profile && submission.enqueuedAt != std::chrono::steady_clock::time_point{}) costs.dequeueNs += static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - submission.enqueuedAt).count());
+            }
+            execute(submission);
+            if (traceGpu) std::fprintf(stderr, "[gpu] %.1f done serial=%llu queue=0x%x\n", TraceMs(), static_cast<unsigned long long>(submission.serial), id);
+            const auto completeStart = profile ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+            bool notify = true;
+            {
+                std::lock_guard lock(mutex);
+                rethrowFailure();
+                markCompleted(submission.serial);
+                forgetUnfinishedWrites(workers.at(id), submission);
+
+                notify = idleWaiters != 0;
+            }
+            if (notify) changed.notify_all();
+            else ++costs.notifiesSkipped;
+            if (profile) costs.completeNs += static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - completeStart).count());
+        }
+    } catch (const ProcessShutdown&) {
+        submission = Submission{};
+    } catch (...) {
+        const auto error = std::current_exception();
+        ReportFailure(error);
+        for (const auto& [offset, flip] : submission.flips) flip->Fail(error);
+    }
+}
+
+}

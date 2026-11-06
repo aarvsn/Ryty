@@ -1,0 +1,51 @@
+#ifndef CODEGEN_X86_DECODEDINSTRUCTION_HPP
+#define CODEGEN_X86_DECODEDINSTRUCTION_HPP
+
+#include <cstdint>
+#include <cstddef>
+
+namespace Codegen {
+
+struct DecodedInstruction {
+    const std::uint8_t* Data;
+    std::size_t Length;
+
+    [[nodiscard]] std::size_t OpcodeOffset() const;
+    [[nodiscard]] bool IsShaNi() const;
+    [[nodiscard]] bool IsSha256() const;
+    [[nodiscard]] bool IsSha1() const;
+    [[nodiscard]] bool IsSha1Rnds4() const;
+    [[nodiscard]] bool IsExtrq() const;
+    [[nodiscard]] bool IsInsertq() const;
+    [[nodiscard]] bool IsMonitorx() const;
+    [[nodiscard]] bool IsMwaitx() const;
+    [[nodiscard]] bool IsClzero() const;
+    [[nodiscard]] bool IsRdpru() const;
+    [[nodiscard]] bool IsMcommit() const;
+    [[nodiscard]] bool IsRdpid() const;
+    [[nodiscard]] bool IsPrefetchw() const;
+    [[nodiscard]] bool IsFemms() const;
+    [[nodiscard]] bool IsMovntss() const;
+    [[nodiscard]] bool IsMovntsd() const;
+    [[nodiscard]] bool IsSkinit() const;
+    [[nodiscard]] bool IsClgi() const;
+    [[nodiscard]] bool IsStgi() const;
+    [[nodiscard]] bool IsInvlpga() const;
+    [[nodiscard]] bool IsVmrun() const;
+    [[nodiscard]] bool IsVmload() const;
+    [[nodiscard]] bool IsVmsave() const;
+    [[nodiscard]] bool IsPrefetch3dnow() const;
+    [[nodiscard]] bool IsClflushopt() const;
+    [[nodiscard]] bool IsClwb() const;
+    [[nodiscard]] bool IsCldemote() const;
+    [[nodiscard]] bool IsUmonitor() const;
+    [[nodiscard]] bool IsUmwait() const;
+    [[nodiscard]] bool IsTpause() const;
+
+private:
+    [[nodiscard]] std::size_t _skipPrefixesAndRex(bool* outHasOperandSizePrefix, bool* outHasRepnePrefix, bool* outHasRepPrefix) const;
+};
+
+}
+
+#endif

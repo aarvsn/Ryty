@@ -1,0 +1,19 @@
+# Ryty C++ formatting. Run: clang-format -i <file>
+BasedOnStyle: LLVM
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 140
+UseTab: Never
+PointerAlignment: Left
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Attach
+DerivePointerAlignment: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+AlignAfterOpenBracket: Align
+SpaceAfterCStyleCast: false

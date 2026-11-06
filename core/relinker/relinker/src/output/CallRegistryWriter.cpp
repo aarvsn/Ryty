@@ -1,0 +1,48 @@
+#include <relinker/output/CallRegistryWriter.hpp>
+#include <io/Json.hpp>
+#include <sstream>
+
+namespace Relinker {
+
+static std::string _jsonString(const std::string& s) {
+    return '"' + Io::EscapeJsonString(s) + '"';
+}
+
+static std::string _hexOffset(FileByteOffset v) {
+    std::ostringstream oss;
+    oss << "\"0x" << std::hex << std::uppercase << v << "\"";
+    return oss.str();
+}
+
+std::string CallRegistryWriter::WriteCallRegistry(const std::vector<CallRegistryEntry>& entries) {
+    std::ostringstream out;
+    out << "[\n";
+
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const auto& e = entries[i];
+        out << "  {\n";
+        out << "    \"nid\": " << _jsonString(e.Nid) << ",\n";
+        out << "    \"library\": " << _jsonString(e.Library) << ",\n";
+        out << "    \"relocationType\": " << _jsonString(e.RelocationTypeString) << ",\n";
+        out << "    \"relocationOffset\": " << _hexOffset(e.RelocationOffset) << ",\n";
+        out << "    \"targetSection\": " << _jsonString(e.TargetSection) << ",\n";
+        out << "    \"targetOffset\": " << _hexOffset(e.TargetOffset) << ",\n";
+        out << "    \"callSites\": [";
+
+        for (std::size_t j = 0; j < e.CallSites.size(); ++j) {
+            if (j > 0) out << ", ";
+            out << _hexOffset(e.CallSites[j]);
+        }
+
+        out << "],\n";
+        out << "    \"callSitesResolved\": " << (e.CallSitesResolved ? "true" : "false") << "\n";
+        out << "  }";
+        if (i + 1 < entries.size()) out << ",";
+        out << "\n";
+    }
+
+    out << "]\n";
+    return out.str();
+}
+
+}

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Ryty GUI
+Exec=ryty-gui
+Icon=ryty
+Categories=Utility;
+Comment=PlayStation 5 and PlayStation 4 executable porting tool

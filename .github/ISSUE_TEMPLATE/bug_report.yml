@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a porting failure, crash or wrong behavior
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue. Ryty aims to either do
+        exactly what is asked or fail with a clear error - please include the
+        exact error text.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the exact command line and the full console output (or the JSON report if you used --report).
+      placeholder: |
+        ryty --to-intel eboot.bin out.elf
+        FAIL: ...
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target system
+      options:
+        - Linux
+        - Windows
+        - Both
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - CLI (ryty)
+        - GUI (ryty-gui)
+        - Ported game/runtime
+        - Build system
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Ryty version or commit
+      placeholder: v1.0 or commit hash
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: OS, CPU (AMD/Intel - instruction lowering matters), GPU, anything else.

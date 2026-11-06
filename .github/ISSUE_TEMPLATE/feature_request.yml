@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement or a new porting capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What game, module or workflow does this unlock? Concrete use cases first.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should happen instead? Include CLI/GUI behavior if relevant.
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Project constraints
+      description: Contributions follow the project's "implement general behaviour, not one title's need" rule.
+      options:
+        - label: This benefits more than a single title
+          required: true

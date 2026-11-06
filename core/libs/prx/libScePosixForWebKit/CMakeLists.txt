@@ -1,0 +1,23 @@
+add_library(libScePosixForWebKit SHARED EXCLUDE_FROM_ALL Export.cpp Resolver.cpp)
+target_include_directories(libScePosixForWebKit PRIVATE ${LIBS_INCLUDE_DIR})
+if(WIN32)
+    target_link_libraries(libScePosixForWebKit PRIVATE ws2_32)
+endif()
+configure_windows_unwind(libScePosixForWebKit)
+
+if(MINGW)
+    foreach(runtimeLinkFlag IN ITEMS -static-libgcc -static-libstdc++ -static)
+        string(REPLACE "${runtimeLinkFlag}" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    endforeach()
+endif()
+
+if(BUILD_TESTING)
+    add_test_executable(guest_resolver_tests ${LIBS_INCLUDE_DIR}/tests/GuestResolver.cpp)
+    target_include_directories(guest_resolver_tests PRIVATE ${LIBS_INCLUDE_DIR})
+    target_link_libraries(guest_resolver_tests PRIVATE libScePosixForWebKit)
+    add_test(NAME guest_resolver COMMAND guest_resolver_tests)
+    if(WIN32)
+        set_tests_properties(guest_resolver PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libScePosixForWebKit>")
+    endif()
+endif()
