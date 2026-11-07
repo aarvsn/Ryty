@@ -222,6 +222,8 @@ jobs:
           test -n "$CLI_EXE" && test -n "$GUI_EXE"
 
       - name: Run tests
+        env:
+          PYTHONUTF8: '1'
         run: ctest --test-dir build/windows-release --output-on-failure --parallel 2
 
       - name: Deploy Qt6 runtime next to the GUI (windeployqt)
