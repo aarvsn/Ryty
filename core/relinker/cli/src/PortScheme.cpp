@@ -1,4 +1,5 @@
 #include <PortScheme.hpp>
+#include <io/Json.hpp>
 #include <cstdio>
 
 namespace Cli {
@@ -62,25 +63,7 @@ std::vector<std::pair<std::string, std::string>> PortScheme::Fields() const {
 
 void AppendSchemeJson(std::ostringstream& report, const PortScheme& scheme) {
     const auto quoted = [](const std::string& value) {
-        std::string out = "\"";
-        for (const char character : value) {
-            switch (character) {
-                case '"': out += "\\\""; break;
-                case '\\': out += "\\\\"; break;
-                case '\n': out += "\\n"; break;
-                case '\r': out += "\\r"; break;
-                case '\t': out += "\\t"; break;
-                default:
-                    if (static_cast<unsigned char>(character) < 0x20) {
-                        char buffer[7];
-                        std::snprintf(buffer, sizeof(buffer), "\\u%04x", character);
-                        out += buffer;
-                    } else {
-                        out += character;
-                    }
-            }
-        }
-        return out + "\"";
+        return "\"" + Io::EscapeJsonString(value) + "\"";
     };
     report << "  \"scheme\": {\n";
     report << "    \"system\": " << quoted(scheme.system) << ",\n";

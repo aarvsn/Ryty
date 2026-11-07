@@ -172,7 +172,7 @@ jobs:
   # -------------------------------------------------------------- Windows ---
   windows:
     name: Windows x86_64 (CLI + Qt6 GUI)
-    runs-on: windows-latest
+    runs-on: windows-2022
     defaults:
       run:
         shell: msys2 {0}
@@ -222,6 +222,8 @@ jobs:
           test -n "$CLI_EXE" && test -n "$GUI_EXE"
 
       - name: Run tests
+        env:
+          PYTHONUTF8: '1'
         run: ctest --test-dir build/windows-release --output-on-failure --parallel 2
 
       - name: Deploy Qt6 runtime next to the GUI (windeployqt)
@@ -277,7 +279,7 @@ jobs:
   # ---------------------------------------------------------------- macOS ---
   macos:
     name: macOS (CLI + Metal)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
@@ -297,15 +299,14 @@ jobs:
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
-      - name: Configure
-        run: |
-          cmake -B build/macos -G Ninja -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+      - name: Configure (macos-release preset)
+        run: cmake --preset macos-release
 
       - name: Build
-        run: cmake --build build/macos --parallel
+        run: cmake --build build/macos-release --parallel
 
       - name: Run tests
-        run: ctest --test-dir build/macos --output-on-failure --parallel 2
+        run: ctest --test-dir build/macos-release --output-on-failure --parallel 2
 
       - name: Assemble macOS package
         run: |
@@ -313,7 +314,7 @@ jobs:
           VER="${{ steps.ver.outputs.version }}"
           STAGE="Ryty-$VER-macos"
           mkdir -p "$STAGE"
-          CLI_EXE="$(find build/macos -type f -name ryty | head -n1)"
+          CLI_EXE="$(find build/macos-release -type f -name ryty | head -n1)"
           cp "$CLI_EXE" "$STAGE/ryty"
           cp ci/README.txt "$STAGE/README.txt"
           zip -r "Ryty-$VER-macos.zip" "$STAGE"
