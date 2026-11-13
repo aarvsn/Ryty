@@ -202,5 +202,8 @@ if(BUILD_TESTING)
         add_test(NAME port_scheme_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/PortSchemeTests.py
                 $<TARGET_FILE:ryty>)
+        add_test(NAME intel_lowering_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/IntelLoweringTests.py
+                $<TARGET_FILE:ryty>)
     endif()
 endif()

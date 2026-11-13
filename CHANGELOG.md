@@ -3,6 +3,39 @@
 Releases before 1.0.7 predate this file; their history lives in the commit
 log and the existing documentation.
 
+## 2.1.0
+
+This release focuses on Intel CPU support: the AMD-only instruction lowering
+behind `--to-intel` is now verified end to end and the CLI guides Intel users
+towards it.
+
+### Verified Intel lowering
+
+* **Residual verification**: after `--to-intel` conversion the ported image is
+  re-scanned and any AMD-only instruction that survived lowering fails the port
+  with its name and file offset (exit code 2) instead of producing a binary
+  that traps on an Intel host. The scan runs on the finished Linux ELF, after
+  the writer has placed the out-of-line stubs.
+* **Conversion scanner API**: `Codegen::IAmd64OnlyConverter` gained
+  `ScanResidual`, which lists every AMD-only instruction the converter
+  recognizes in a set of code segments. `Convert` plus `ScanResidual` is the
+  contract the CLI relies on: a converted image leaves no site behind.
+* **Intel host guidance**: the CLI detects the host CPU vendor with CPUID
+  (`Cli::HostCpuVendor` / `Cli::HostIsIntel`). On an Intel host without
+  `--to-intel` it prints a warning and records one in the porting report.
+* **Scheme and report**: the porting scheme and the `ryty-port-report/2` and
+  `ryty-batch-report/1` reports carry the new `toIntel` field, and the
+  one-line scheme description appends `Intel lowering (--to-intel)`.
+* **Verbose confirmation**: `--to-intel --verbose` prints
+  `Intel verification: no AMD-only instructions remain in the ported image`
+  once the finished image passes the residual scan.
+
+### Version
+
+* Every component now reports `2.1.0`: the CLI (`--version`), the Qt6 GUI, the
+  RytyNet bridge (`RYTNET_VERSION`, `User-Agent`), the Metal bridge capability
+  value and the Apple `LC_SOURCE_VERSION` payload (`2.1.0.0`).
+
 ## 2.0.0
 
 ### Expanded macOS support

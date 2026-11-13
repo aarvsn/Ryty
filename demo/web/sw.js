@@ -1,8 +1,8 @@
-// Ryty Web 2.0.0 service worker: cache-first offline mode.
+// Ryty Web 2.1.0 service worker: cache-first offline mode.
 // The studio is fully client side, so every asset is precached at install and
 // served from the cache when the network is unavailable. Bumping the cache
 // name with the release version invalidates old caches on update.
-const CACHE_NAME = "ryty-web-2.0.0";
+const CACHE_NAME = "ryty-web-2.1.0";
 const ASSETS = [
     "./",
     "./index.html",

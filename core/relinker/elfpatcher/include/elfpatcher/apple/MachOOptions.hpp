@@ -32,8 +32,8 @@ struct MachOOptions {
     std::vector<std::uint8_t> entitlements;
     // Sets the CS_RUNTIME flag in the CodeDirectory (hardened runtime).
     bool hardenedRuntime = false;
-    // LC_SOURCE_VERSION payload, e.g. 0x0002000000000000 == 2.0.0.0.
-    std::uint64_t sourceVersion = 0x0002000000000000ULL;
+    // LC_SOURCE_VERSION payload, e.g. 0x0002010000000000 == 2.1.0.0.
+    std::uint64_t sourceVersion = 0x0002010000000000ULL;
 
     [[nodiscard]] bool IsIosFamily() const { return platform != Platform::MacOs; }
 

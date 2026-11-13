@@ -1,4 +1,5 @@
 #include <Cli.hpp>
+#include <HostCpu.hpp>
 #include <io/ByteReader.hpp>
 #include <io/ByteWriter.hpp>
 #include <io/Sha256.hpp>
@@ -13,6 +14,7 @@
 #include <elfpatcher/windows/WindowsElfPatcher.hpp>
 #include <elfpatcher/windows/WindowsPeWriter.hpp>
 #include <codegen/IInstructionScanner.hpp>
+#include <codegen/IAmd64OnlyConverter.hpp>
 #include <codegen/x86/IAmd64OnlyInstructionMatcher.hpp>
 #include <filesystem>
 #include <fstream>
@@ -215,10 +217,10 @@ void TestAppleVersionHelpers() {
     threw = false;
     try { (void)Cli::EncodeAppleVersion("1.2.3.4"); } catch (const std::exception&) { threw = true; }
     assert(threw);
-    // LC_SOURCE_VERSION packing: matches the 2.0.0 writer convention.
-    assert(Cli::EncodeSourceVersion("2.0.0") == 0x0002000000000000ULL);
+    // LC_SOURCE_VERSION packing: matches the 2.1.0 writer convention.
+    assert(Cli::EncodeSourceVersion("2.1.0") == 0x0002010000000000ULL);
     assert(Cli::EncodeSourceVersion("1.2.3") == 0x0001020300000000ULL);
-    assert(Cli::EncodeSourceVersion(Cli::RYTY_VERSION) == 0x0002000000000000ULL);
+    assert(Cli::EncodeSourceVersion(Cli::RYTY_VERSION) == 0x0002010000000000ULL);
     std::cout << "  -> PASSED!\n";
 }
 
@@ -311,7 +313,7 @@ void TestAppleImages() {
     Elfpatcher::Apple::MachOOptions options;
     options.minOs = 0x000C0300u;
     // The arm64 launcher slice is a well-formed MH_MAGIC_64 arm64 executable.
-    const auto launcher = Elfpatcher::Apple::MakeArm64LauncherSlice(options, "2.0.0");
+    const auto launcher = Elfpatcher::Apple::MakeArm64LauncherSlice(options, "2.1.0");
     assert(launcher.size() > 0x2000);
     std::uint32_t magic = 0, cpuType = 0;
     std::memcpy(&magic, launcher.data(), 4);
@@ -324,7 +326,7 @@ void TestAppleImages() {
 
     // The iOS guest image embeds the payload and self-verifies.
     std::vector<std::uint8_t> payload(0x1234, 0x5A);
-    const auto iosImage = Elfpatcher::Apple::MakeIosGuestImage(payload, options, "2.0.0");
+    const auto iosImage = Elfpatcher::Apple::MakeIosGuestImage(payload, options, "2.1.0");
     std::memcpy(&cpuType, iosImage.data() + 4, 4);
     assert(cpuType == 0x0100000cu);
     assert(iosImage.size() > payload.size());
@@ -344,7 +346,7 @@ void TestAppleImages() {
         simOptions.platform = Elfpatcher::Apple::MachOOptions::Platform::IosSimulator;
         const std::string jitPlist = "<plist version=\"1.0\"><dict/></plist>";
         simOptions.entitlements.assign(jitPlist.begin(), jitPlist.end());
-        const auto simImage = Elfpatcher::Apple::MakeIosGuestImage(payload, simOptions, "2.0.0");
+        const auto simImage = Elfpatcher::Apple::MakeIosGuestImage(payload, simOptions, "2.1.0");
         std::memcpy(&cpuType, simImage.data() + 4, 4);
         assert(cpuType == 0x0100000cu);
         // Walk the load commands: exactly one LC_BUILD_VERSION, platform 7.
@@ -691,7 +693,7 @@ void TestMetalBridge() {
     assert(RytyMetalSupportsFeatureSet(0) != 0);
     RytyMetalSetSampleCount(4);
     RytyMetalSetRasterizerDiscardEnabled(0);
-    assert(RytyMetalGetDeviceCapabilities() == 0x00020000);
+    assert(RytyMetalGetDeviceCapabilities() == 0x00020100);
 
     std::cout << "  -> PASSED!\n";
 }
@@ -711,7 +713,7 @@ void TestByteIo() {
 
 void TestRytyNetBridge() {
     std::cout << "[Test] Running TestRytyNetBridge...\n";
-    assert(RytyNetVersion() == 0x00020000u);
+    assert(RytyNetVersion() == 0x00020100u);
 
     bool isHttps = false;
     std::string host, path;
@@ -875,6 +877,126 @@ void TestIntelCpuLowering() {
         assert(match->ReplacementBytes[0] == 0xF3 && match->ReplacementBytes[1] == 0x90); // PAUSE
     }
 
+    // 6. PREFETCHW -> PREFETCHT0 opcode swap, FEMMS -> EMMS opcode swap.
+    {
+        const std::uint8_t prefetchw[] = {0x0F, 0x0D, 0x08}; // prefetchw [rax] (ModRM reg=1)
+        auto match = matcher->Match(prefetchw, sizeof(prefetchw));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "PREFETCHW");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes[1] == 0x18); // PREFETCHT0
+    }
+    {
+        const std::uint8_t femms[] = {0x0F, 0x0E};
+        auto match = matcher->Match(femms, sizeof(femms));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "FEMMS");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::InPlace);
+        assert(match->ReplacementBytes[1] == 0x77); // EMMS
+    }
+
+    // 7. Trampoline instructions: CLZERO, RDPRU, SHA-256 RNDS2, SSE4a EXTRQ.
+    {
+        const std::uint8_t clzero[] = {0x0F, 0x01, 0xFC};
+        auto match = matcher->Match(clzero, sizeof(clzero));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "CLZERO");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::Trampoline);
+        assert(!match->StubBody.empty());
+    }
+    {
+        const std::uint8_t rdpru[] = {0x0F, 0x01, 0xFD};
+        auto match = matcher->Match(rdpru, sizeof(rdpru));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "RDPRU");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::Trampoline);
+        assert(match->StubBody.size() >= 10); // EDX:EAX = 0
+    }
+    {
+        const std::uint8_t sha256rnds2[] = {0x0F, 0x38, 0xCB, 0xC1}; // sha256rnds2 xmm0, xmm1
+        auto match = matcher->Match(sha256rnds2, sizeof(sha256rnds2));
+        assert(match.has_value());
+        assert(std::string(match->InstructionName) == "SHA256RNDS2");
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::Trampoline);
+        assert(!match->StubBody.empty());
+    }
+    {
+        const std::uint8_t extrq[] = {0x66, 0x0F, 0x79, 0xC1}; // extrq xmm0, xmm1 (register form)
+        auto match = matcher->Match(extrq, sizeof(extrq));
+        assert(match.has_value());
+        assert(match->Lowering == Codegen::Amd64OnlyLowering::Trampoline);
+    }
+
+    std::cout << "  -> PASSED!\n";
+}
+
+void TestAmd64OnlyResidualScan() {
+    std::cout << "[Test] Running TestAmd64OnlyResidualScan...\n";
+    const auto converter = Codegen::MakeAmd64OnlyConverter();
+
+    const auto makeSegment = [](std::size_t size) {
+        Domain::ProgramHeader ph{};
+        ph.Type = 1;      // PT_LOAD
+        ph.Flags = 0x5;   // R+X
+        ph.Offset = 0;
+        ph.MappedAddress = 0x400000;
+        ph.FileSize = size;
+        ph.MemorySize = size;
+        return ph;
+    };
+
+    // An in-place instruction (MONITORX) is reported by the residual scan and
+    // gone after Convert.
+    {
+        std::vector<std::uint8_t> bytes(0x100, 0x90); // NOP sled
+        bytes[0x10] = 0x0F; bytes[0x11] = 0x01; bytes[0x12] = 0xFA; // MONITORX
+        const std::vector<Domain::ProgramHeader> segments{makeSegment(bytes.size())};
+        const auto before = converter->ScanResidual(bytes, segments);
+        assert(before.size() == 1);
+        assert(before[0].InstructionName == "MONITORX");
+        assert(before[0].Offset == 0x10);
+        const auto converted = converter->Convert(bytes, segments);
+        assert(converted.Reports.size() == 1);
+        assert(converter->ScanResidual(converted.Bytes, segments).empty());
+    }
+
+    // A trampoline instruction (CLZERO) is reported by the residual scan and
+    // recorded as a stub site. The converter leaves the site bytes in place; the
+    // patcher writes the jump, so the site is only gone from the finished image
+    // (covered by the CLI integration test).
+    {
+        std::vector<std::uint8_t> bytes(0x100, 0x90);
+        bytes[0x20] = 0x0F; bytes[0x21] = 0x01; bytes[0x22] = 0xFC; // CLZERO
+        const std::vector<Domain::ProgramHeader> segments{makeSegment(bytes.size())};
+        const auto before = converter->ScanResidual(bytes, segments);
+        assert(before.size() == 1);
+        assert(before[0].InstructionName == "CLZERO");
+        const auto converted = converter->Convert(bytes, segments);
+        assert(converted.Trampolines.size() == 1);
+        assert(converted.Trampolines[0].Offset == 0x20);
+        assert(converted.Reports.size() == 1);
+    }
+
+    // A segment with no AMD-only instruction reports nothing.
+    {
+        const std::vector<std::uint8_t> bytes(0x40, 0x90);
+        const std::vector<Domain::ProgramHeader> segments{makeSegment(bytes.size())};
+        assert(converter->ScanResidual(bytes, segments).empty());
+    }
+
+    std::cout << "  -> PASSED!\n";
+}
+
+void TestHostCpuDetection() {
+    std::cout << "[Test] Running TestHostCpuDetection...\n";
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    // The vendor string is exactly twelve ASCII bytes on x86 hosts.
+    assert(Cli::HostCpuVendor().size() == 12);
+    assert(Cli::HostIsIntel() == (Cli::HostCpuVendor() == "GenuineIntel"));
+#else
+    assert(Cli::HostCpuVendor().empty());
+    assert(!Cli::HostIsIntel());
+#endif
     std::cout << "  -> PASSED!\n";
 }
 
@@ -1004,6 +1126,8 @@ int main() {
     TestGuestModulePath();
     TestRytyNetBridge();
     TestIntelCpuLowering();
+    TestAmd64OnlyResidualScan();
+    TestHostCpuDetection();
     std::cout << "All Ryty Relinker Unit Tests Passed Successfully!\n";
     return 0;
 }

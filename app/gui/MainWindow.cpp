@@ -35,7 +35,7 @@ QGroupBox* Group(const QString& title, QLayout* layout) {
 
 namespace Ryty {
 
-constexpr char GuiVersion[] = "2.0.0";
+constexpr char GuiVersion[] = "2.1.0";
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), _settings(this) {
     setWindowTitle(QString("Ryty %1 - PS4 / PS5 executable porter").arg(QLatin1String(GuiVersion)));
@@ -189,7 +189,7 @@ QWidget* MainWindow::CreateOptionsGroup() {
     };
 
     _toIntel = makeCheck("Lower AMD-only instructions", true, 2, 0,
-        "Rewrites AMD-only instructions (SHA-NI, RDPRU, MONITORX, ...) for Intel hosts. Recommended unless the host CPU is an AMD processor.");
+        "Rewrites AMD-only instructions (SHA-NI, RDPRU, MONITORX, ...) for Intel hosts. The finished image is re-scanned and the port fails if any AMD-only instruction survived. Recommended unless the host CPU is an AMD processor.");
     _skipSceModule = makeCheck("Skip sce_module", false, 2, 1,
         "Do not process the sce_module/sce_modules PRX files next to the input.");
     _skipSyscallCheck = makeCheck("Skip syscall check", false, 2, 2,

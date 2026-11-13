@@ -2,7 +2,7 @@
     "name": "Ryty Web Porting Studio",
     "short_name": "Ryty Web",
     "description": "Browser-based PS4/PS5 ELF porting studio: client-side ELF parsing, NID inspection, section and hex viewers, report diff. Works fully offline.",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "start_url": "./index.html",
     "scope": "./",
     "display": "standalone",

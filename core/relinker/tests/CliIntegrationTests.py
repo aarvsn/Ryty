@@ -49,13 +49,13 @@ class CliIntegrationTests(unittest.TestCase):
         result = subprocess.run([str(RYTY), "--version"], capture_output=True, encoding="utf-8",
                                 errors="replace", timeout=10)
         self.assertEqual(result.returncode, 0, (result.stdout or "") + (result.stderr or ""))
-        self.assertEqual(result.stdout.strip(), "ryty 2.0.0")
+        self.assertEqual(result.stdout.strip(), "ryty 2.1.0")
 
     def test_report_carries_version_and_digests(self):
         report, _ = self.run_ryty(extra=["--verify"])
         parsed = json.loads(report.read_text(encoding="utf-8"))
         self.assertEqual(parsed["schema"], "ryty-port-report/2")
-        self.assertEqual(parsed["version"], "2.0.0")
+        self.assertEqual(parsed["version"], "2.1.0")
         self.assertTrue(parsed["verified"])
         self.assertEqual(len(parsed["inputSha256"]), 64)
         self.assertEqual(len(parsed["outputSha256"]), 64)
@@ -122,7 +122,7 @@ class CliIntegrationTests(unittest.TestCase):
         self.assertTrue((games / "ported" / "second" / "second.elf").exists())
         batchReport = json.loads((games / "ported" / "batch-report.json").read_text(encoding="utf-8"))
         self.assertEqual(batchReport["schema"], "ryty-batch-report/1")
-        self.assertEqual(batchReport["version"], "2.0.0")
+        self.assertEqual(batchReport["version"], "2.1.0")
         self.assertEqual(batchReport["summary"], {"total": 2, "ported": 2, "failed": 0})
         perFile = json.loads((games / "ported" / "eboot" / "eboot.elf.report.json").read_text(encoding="utf-8"))
         self.assertTrue(perFile["verified"])

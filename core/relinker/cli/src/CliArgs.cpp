@@ -14,7 +14,7 @@ namespace {
 // the batch flags, the Apple targets (--target ios / ios-sim, --universal,
 // --bundle, --ipa, entitlements and the minimum-version flags) and the porting
 // scheme flags (--min-os, --interp, empty --rpath) are all part of this
-// 2.0.0 release.
+// 2.1.0 release.
 std::string UsageText() {
     return
         "Usage: ryty [--windows|--macos|--ios|--ios-simulator|--target linux|windows|macos|ios|ios-sim] [--ps4|--ps5|--console auto|ps4|ps5] [--windows-diagnostics] [--windows-gui] [--windows-console] [--rytynet] [--skip-syscall-check] [--skip-sce-module] [--exclude-sce-module <file>]... [--to-intel] [unused-filter=0|1|2] [--registry] [--report <file>] [--rpath <path>|--rpath \"\"] [--lazy-binding] [--interp <path>] [--universal] [--bundle] [--ipa] [--macos-min <ver>] [--ios-min <ver>] [--min-os <ver>] [--identifier <id>] [--entitlements <plist>|--entitlements-template <preset>] [--provision <mobileprovision>] [--hardened-runtime] [--autorun] [--verbose] [--verify] [--dry-run] [--config <file>] [--batch <dir> [--batch-out <dir>]] [--version] <input.elf> <output.elf>\n"
@@ -126,7 +126,7 @@ std::uint32_t EncodeAppleVersion(const std::string& version) {
 
 std::uint64_t EncodeSourceVersion(const std::string& version) {
     // LC_SOURCE_VERSION payload. The project packs release fields into 16-bit
-    // groups from the top, e.g. this release: 2.0.0 -> 0x0002000000000000.
+    // groups from the top, e.g. this release: 2.1.0 -> 0x0002010000000000.
     std::uint64_t encoded = 0;
     std::size_t field = 0;
     std::string current;
