@@ -67,13 +67,13 @@ void ApplyApplicationTheme(const bool dark) {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("Ryty");
-    QApplication::setApplicationVersion("2.0.0");
+    QApplication::setApplicationVersion("2.1.0");
     QApplication::setOrganizationName("Ryty");
 
     QApplication::setStyle(QStyleFactory::create("Fusion"));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Ryty 2.0.0 - PS4/PS5 executable porting tool (GUI)");
+    parser.setApplicationDescription("Ryty 2.1.0 - PS4/PS5 executable porting tool (GUI)");
     parser.addHelpOption();
     parser.addVersionOption();
     QCommandLineOption lightOption(QStringList() << "l" << "light", "Start with the light theme.");

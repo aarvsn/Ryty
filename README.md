@@ -20,6 +20,10 @@ Ryty is a fork of [AnyPS5](https://github.com/boykopovar/AnyPS5) - see
   PREFETCHW, FEMMS, MONITORX/MWAITX, CLZERO, EXTRQ/INSERTQ and MOVNTSS/SD
   are lowered in place or through out-of-line stubs; short sites absorb
   neighbouring instructions.
+* **Verified Intel lowering** (2.1.0) - after `--to-intel` the ported image is
+  re-scanned; any AMD-only instruction that survived lowering fails the port
+  with its name and offset instead of producing a binary that traps. The CLI
+  detects Intel hosts and points at `--to-intel` when it is missing.
 * **PlayStation 4 and PlayStation 5 Support** - Auto-detection and explicit console selection (`--ps4`, `--ps5`, `--console auto|ps4|ps5`) to port both PS4 and PS5 executables.
 * **Expanded macOS target with Metal** (2.0.0) - ad-hoc signed Mach-O with the Metal bridge, `--universal` fat binaries (native arm64 Rosetta launcher + x86_64 guest slice) for Apple Silicon, `--entitlements`/`--entitlements-template` presets, `--hardened-runtime`, `--macos-min`, `--identifier` and `--bundle` (.app with Info.plist).
 * **Experimental iOS target** (2.0.0) - `--target ios` produces a signed arm64 guest container (16 KB alignment, iOS framework imports, embedded `__GUEST` payload, entitlements embedded in the arm64 signature), `--bundle`/`--ipa` package it as an installable `.app`/`.ipa` with a validated provisioning profile (`--provision`).
@@ -54,8 +58,16 @@ MinGW requirement for the runtime libraries, are in
 
 On Intel hosts, pass `--to-intel` to the relinker to lower supported
 AMD-only instructions in the executable and bundled `sce_module`/`sce_modules`
-PRX files. Unsupported instructions or stub jumps outside the x86-64
-relative branch range produce an error.
+PRX files. Since 2.1.0 the ported image is re-scanned and the port fails if any
+AMD-only instruction survived, and the CLI warns when it runs on an Intel host
+without `--to-intel`. Unsupported instructions or stub jumps outside the
+x86-64 relative branch range produce an error.
+
+New in 2.1.0 (Intel hosts):
+
+```sh
+ryty --to-intel --verbose in.elf out.elf   # lower AMD-only instructions and confirm none remain
+```
 
 New in 2.0.0:
 

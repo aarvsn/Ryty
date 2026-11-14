@@ -44,7 +44,7 @@ checks `LC_BUILD_VERSION` (see `--verify` below).
 | `--ios`, `--target ios` | Produce an experimental iOS arm64 guest container (see below). |
 | `--ios-simulator`, `--target ios-sim` | Produce the same arm64 guest container for the iOS Simulator: `LC_BUILD_VERSION` platform 7, provisioning-free `.app` bundles, device-only options rejected. |
 | `--target <linux\|windows\|macos\|ios\|ios-sim>` | Target system selector; equivalent to the individual flags. |
-| `--version`, `-V` | Print `ryty 2.0.0` and exit (new in 2.0.0). |
+| `--version`, `-V` | Print `ryty 2.1.0` and exit. |
 | `--config <file>` | Apply INI-style options from a file before the remaining command line flags (new in 2.0.0, see below). |
 | `--batch <dir>` | Batch mode: port every ELF image in `<dir>` (new in 2.0.0, see below). |
 | `--batch-out <dir>` | Output directory for `--batch` (default `<batch dir>/ported`). |
@@ -55,7 +55,7 @@ checks `LC_BUILD_VERSION` (see `--verify` below).
 | `--ps4` | Treat input executable as a PlayStation 4 game binary. |
 | `--ps5` | Treat input executable as a PlayStation 5 game binary. |
 | `--console <auto\|ps4\|ps5>` | Console platform selection (default `auto`). |
-| `--to-intel` | Lower AMD-only instructions in the executable and bundled PRX files (see [instruction lowering](../dev/INSTRUCTION_LOWERING.md)). Recommended on Intel hosts. |
+| `--to-intel` | Lower AMD-only instructions in the executable and bundled PRX files (see [instruction lowering](../dev/INSTRUCTION_LOWERING.md)). Recommended on Intel hosts: the ported image is re-scanned afterwards and the port fails if any AMD-only instruction survived. The CLI warns when it runs on an Intel host without this flag. |
 | `unused-filter=0\|1\|2` | Unused NID filter level. `0` keeps every reference; `1` runs the CFG/GOT filter and is resilient - when the analysis cannot run, every reference is kept and a warning is printed; `2` runs the strict reachability filter and compacts the PLT. |
 | `--skip-sce-module` | Do not process `sce_module`/`sce_modules` PRX files. |
 | `--exclude-sce-module <file>` | Skip a single PRX file. Repeatable. Conflicts with `--skip-sce-module`. |
@@ -195,7 +195,7 @@ the same schema per file plus a `ryty-batch-report/1` summary):
 {
   "schema": "ryty-port-report/2",
   "tool": "ryty",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "scheme": {
     "system": "linux",
     "format": "SysV ELF64",
@@ -206,7 +206,8 @@ the same schema per file plus a `ryty-batch-report/1` summary):
     "runPath": "$ORIGIN/libs",
     "universal": false,
     "nxStack": true,
-    "lazyBinding": false
+    "lazyBinding": false,
+    "toIntel": true
   },
   "input": "eboot.bin",
   "output": "/abs/path/out.elf",

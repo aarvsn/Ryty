@@ -1,5 +1,6 @@
 #include <Cli.hpp>
 #include <PortScheme.hpp>
+#include <HostCpu.hpp>
 #include <domain/Types.hpp>
 #include <io/FileReader.hpp>
 #include <io/FileWriter.hpp>
@@ -328,6 +329,7 @@ PortOutcome PortOneFile(const Args& args, const std::string& inputPath, const st
     try {
         std::vector<Codegen::TrampolineSite> trampolines;
         std::vector<Codegen::Amd64OnlySubstitutionReport> substitutionReports;
+        std::vector<Domain::ProgramHeader> intelCodeSegments;
         std::vector<std::string> warnings;
         auto extension = std::filesystem::path(outputPath).extension().string();
         for (auto& character : extension) if (character >= 'A' && character <= 'Z') character = static_cast<char>(character + ('a' - 'A'));
@@ -390,7 +392,14 @@ PortOutcome PortOneFile(const Args& args, const std::string& inputPath, const st
             sourceBytes = std::move(converted.Bytes);
             trampolines = std::move(converted.Trampolines);
             substitutionReports = std::move(converted.Reports);
+            // Kept so the finished image can be re-scanned: the Linux writer
+            // preserves the original segment file offsets, so these ranges stay
+            // valid in the output.
+            intelCodeSegments = codeSegments;
             PrintSiteReports(substitutionReports, trampolines, talk);
+        } else if (HostIsIntel()) {
+            warnings.push_back("Host CPU is Intel and --to-intel was not requested; AMD-only instructions in the input will fault at runtime");
+            if (talk) std::cerr << "WARNING: Host CPU is Intel; pass --to-intel to lower AMD-only instructions for this host.\n";
         }
 
         auto elfReader = std::make_shared<Relinker::ElfReader>(sourceBytes);
@@ -483,6 +492,21 @@ PortOutcome PortOneFile(const Args& args, const std::string& inputPath, const st
         }
 
         const auto executableBytes = patcher->Patch(sourceBytes, result.OriginalHeaders, result.DynamicSection, result.OriginalPltGotVaddr, args.runPath, args.lazyBinding, args.windowsDiagnostics, trampolines);
+        // A --to-intel Linux port must contain no AMD-only instruction once the
+        // writer has placed the stubs: any site still recognized in the finished
+        // image would fault on an Intel host, so it fails the port instead of
+        // shipping a binary that traps. (The Windows and Apple writers relocate
+        // the guest image, so their layouts are not re-scanned here.)
+        if (args.toIntel && !args.toWindows && !args.IsAppleTarget()) {
+            const auto residuals = Codegen::MakeAmd64OnlyConverter()->ScanResidual(executableBytes, intelCodeSegments);
+            if (!residuals.empty()) {
+                std::ostringstream message;
+                message << "Intel conversion left " << residuals.size() << " AMD-only instruction(s) in the ported image, first: "
+                        << residuals.front().InstructionName << " at offset 0x" << std::hex << residuals.front().Offset;
+                throw Domain::RelinkerException(message.str(), residuals.front().Offset);
+            }
+            if (talk) std::cout << "Intel verification: no AMD-only instructions remain in the ported image\n";
+        }
         outcome.outputBytes = executableBytes.size();
         outcome.inPlaceReplacements = substitutionReports.size() > trampolines.size() ? substitutionReports.size() - trampolines.size() : 0;
         outcome.trampolines = trampolines.size();

@@ -39,6 +39,7 @@ std::string PortScheme::Describe() const {
         text += ", no DT_RUNPATH";
     }
     if (lazyBinding) text += ", lazy PLT binding";
+    if (toIntel) text += ", Intel lowering (--to-intel)";
     return text;
 }
 
@@ -58,6 +59,7 @@ std::vector<std::pair<std::string, std::string>> PortScheme::Fields() const {
     if (nxStack) fields.emplace_back("Stack", "non-executable (PT_GNU_STACK)");
     fields.emplace_back("Library path", runPath.empty() ? "(none)" : runPath);
     fields.emplace_back("PLT binding", lazyBinding ? "lazy" : "bind-now");
+    fields.emplace_back("Intel lowering", toIntel ? "enabled (--to-intel)" : "disabled");
     return fields;
 }
 
@@ -81,7 +83,8 @@ void AppendSchemeJson(std::ostringstream& report, const PortScheme& scheme) {
     report << "    \"runPath\": " << quoted(scheme.runPath) << ",\n";
     report << "    \"universal\": " << (scheme.universal ? "true" : "false") << ",\n";
     report << "    \"nxStack\": " << (scheme.nxStack ? "true" : "false") << ",\n";
-    report << "    \"lazyBinding\": " << (scheme.lazyBinding ? "true" : "false") << "\n";
+    report << "    \"lazyBinding\": " << (scheme.lazyBinding ? "true" : "false") << ",\n";
+    report << "    \"toIntel\": " << (scheme.toIntel ? "true" : "false") << "\n";
     report << "  }";
 }
 
@@ -90,6 +93,7 @@ PortScheme MakePortScheme(const Args& args) {
     scheme.system = args.TargetName();
     scheme.runPath = args.runPath;
     scheme.lazyBinding = args.lazyBinding;
+    scheme.toIntel = args.toIntel;
 
     if (args.toWindows) {
         scheme.format = "PE32+";

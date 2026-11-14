@@ -31,6 +31,7 @@ struct PortScheme {
     bool universal = false;    // macOS fat binary (arm64 launcher + x86_64 guest)
     bool nxStack = false;      // Linux: PT_GNU_STACK emitted (non-executable stack)
     bool lazyBinding = false;  // PLT binding mode reported alongside the scheme
+    bool toIntel = false;      // AMD-only instructions lowered for Intel hosts
 
     // One-line human description, e.g.
     //   "macOS -> Mach-O 64 (x86_64), platform 1 (macOS), minOS 11.0,

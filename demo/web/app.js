@@ -1,9 +1,9 @@
-// Ryty Web 2.0.0 - PS4 / PS5 Executable Relinker & Porting Studio Engine
+// Ryty Web 2.1.0 - PS4 / PS5 Executable Relinker & Porting Studio Engine
 // Parses ELF binary structures in browser memory, performs NID analysis,
 // section/segment inspection, hex viewing, report diffing and generates the
 // JSON report. Everything runs client side; no byte ever leaves the browser.
 
-const RYTY_WEB_VERSION = "2.0.0";
+const RYTY_WEB_VERSION = "2.1.0";
 
 let fileBuffer = null;
 let fileName = "";
@@ -461,15 +461,15 @@ portBtn.addEventListener("click", () => {
         parsedElf.entitlementsTemplate = entitlementsTemplate;
 
         // Render Results
-        renderSummary(parsedElf, rytyNet, { interpPath, runPath, entitlementsTemplate });
-        renderSchemeCard(parsedElf, { interpPath, runPath, entitlementsTemplate });
+        renderSummary(parsedElf, rytyNet, { interpPath, runPath, entitlementsTemplate, toIntel: lowering === "intel" });
+        renderSchemeCard(parsedElf, { interpPath, runPath, entitlementsTemplate, toIntel: lowering === "intel" });
         renderProgramHeaders(parsedElf.programHeaders);
         renderSections(parsedElf.sections);
         renderDynamicTags(parsedElf.dynamicTags, strTabOffOf(parsedElf), strTabSizeOf(parsedElf));
         renderNids(parsedElf.symbols);
         populateHexSources(parsedElf);
         renderHexView(0, parseInt(document.getElementById("hexLength").value, 10));
-        renderReport(parsedElf, targetOs, rytyNet, unusedFilter, { interpPath, runPath, entitlementsTemplate });
+        renderReport(parsedElf, targetOs, rytyNet, unusedFilter, { interpPath, runPath, entitlementsTemplate, toIntel: lowering === "intel" });
         document.getElementById("compareResult").innerHTML = "";
         document.getElementById("compareStatus").textContent = "";
 
@@ -485,11 +485,12 @@ function portScheme(targetOs, options) {
     const opts = options || {};
     const runPath = opts.runPath || "$ORIGIN/libs";
     const interpPath = opts.interpPath || "/lib64/ld-linux-x86-64.so.2";
+    const toIntel = opts.toIntel === true;
     if (targetOs === "windows") {
         return {
             system: "windows", format: "PE32+", architecture: "x86-64",
             signature: "unsigned", layout: "flat", subsystem: "GUI",
-            runPath: "", nxStack: false, lazyBinding: false
+            runPath: "", nxStack: false, lazyBinding: false, toIntel
         };
     }
     if (targetOs === "macos" || targetOs === "ios" || targetOs === "ios-sim") {
@@ -501,14 +502,14 @@ function portScheme(targetOs, options) {
             signature: opts.entitlementsTemplate ? "ad-hoc CodeDirectory + entitlements" : "ad-hoc CodeDirectory",
             layout: "flat",
             applePlatform: platform, minOsVersion: minOs,
-            runPath: runPath, nxStack: false, lazyBinding: false
+            runPath: runPath, nxStack: false, lazyBinding: false, toIntel
         };
     }
     return {
         system: "linux", format: "SysV ELF64", architecture: "x86-64",
         signature: "none", layout: "flat",
         interpreter: interpPath, runPath: runPath,
-        nxStack: true, lazyBinding: false
+        nxStack: true, lazyBinding: false, toIntel
     };
 }
 
@@ -521,6 +522,7 @@ function schemeDescribe(scheme) {
     if (scheme.nxStack) text += ", non-executable stack";
     if (scheme.system === "linux") text += scheme.runPath ? ", DT_RUNPATH " + scheme.runPath : ", no DT_RUNPATH";
     else if (scheme.runPath) text += ", library path " + scheme.runPath;
+    if (scheme.toIntel) text += ", Intel lowering (--to-intel)";
     return text;
 }
 
@@ -530,13 +532,14 @@ function updateSchemePreview() {
     const options = {
         interpPath: document.getElementById("interpPath").value.trim(),
         runPath: document.getElementById("runPath").value.trim(),
-        entitlementsTemplate: document.getElementById("entitlementsTemplate").value
+        entitlementsTemplate: document.getElementById("entitlementsTemplate").value,
+        toIntel: document.getElementById("loweringTarget").value === "intel"
     };
     const scheme = portScheme(targetOs, options);
     document.getElementById("schemePreview").textContent = "Scheme: " + schemeDescribe(scheme);
 }
 
-["targetOs", "interpPath", "runPath", "entitlementsTemplate"].forEach(id => {
+["targetOs", "interpPath", "runPath", "entitlementsTemplate", "loweringTarget"].forEach(id => {
     const element = document.getElementById(id);
     element.addEventListener("change", updateSchemePreview);
     element.addEventListener("input", updateSchemePreview);
@@ -559,6 +562,7 @@ function renderSchemeCard(elf, options) {
     if (scheme.interpreter) fields.push(["Interpreter", scheme.interpreter]);
     if (scheme.nxStack) fields.push(["Stack", "non-executable (PT_GNU_STACK)"]);
     fields.push(["Library path", scheme.runPath || "(none)"]);
+    fields.push(["Intel lowering", scheme.toIntel ? "enabled (--to-intel)" : "disabled"]);
     const card = document.getElementById("schemeCard");
     card.innerHTML = "";
     const title = document.createElement("div");
@@ -635,8 +639,7 @@ function renderSummary(elf, rytyNet, schemeOptions) {
 [relinker] File parsed successfully (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)
 [console] Auto-detected console target: ${elf.detectedConsole.toUpperCase()}
 [target] Converting executable to ${(elf.targetOs || "linux").toUpperCase()} native target
-${targetNote}[lowering] Lowering SHA-NI and AMD x86-64 instructions to Intel stubs
-[dynamic] Found ${elf.dynamicTags.length} dynamic tags, ${elf.neededLibs.length} DT_NEEDED references
+${targetNote}${elf.lowering === "intel" ? "[lowering] Lowering SHA-NI and AMD-only x86-64 instructions to Intel stubs\n" : "[lowering] Native x86-64 passthrough (AMD-only instructions kept)\n"}[dynamic] Found ${elf.dynamicTags.length} dynamic tags, ${elf.neededLibs.length} DT_NEEDED references
 [sections] Parsed ${elf.sections.length} section headers
 ${rytyNet ? "[rytynet] RytyNet online service bridge enabled\n" : ""}[relinker] String table bounds verified by DT_STRSZ (safe parsing guaranteed)
 [relinker] Relinking completed successfully.`;
@@ -768,7 +771,8 @@ function renderReport(elf, targetOs, rytyNet, unusedFilter, schemeOptions) {
             applePlatform: scheme.applePlatform || null,
             minOsVersion: scheme.minOsVersion || null,
             runPath: scheme.runPath || "",
-            nxStack: scheme.nxStack
+            nxStack: scheme.nxStack,
+            toIntel: scheme.toIntel
         },
         apple: ["macos", "ios", "ios-sim"].includes(targetOs) ? {
             platform: targetOs,

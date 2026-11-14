@@ -32,6 +32,11 @@ public:
         const std::vector<Domain::ProgramHeader>& codeSegments
     ) const override;
 
+    [[nodiscard]] std::vector<Amd64OnlyResidualSite> ScanResidual(
+        const std::vector<std::uint8_t>& fileBytes,
+        const std::vector<Domain::ProgramHeader>& codeSegments
+    ) const override;
+
 private:
     struct Pending {
         std::size_t Index;
@@ -192,6 +197,30 @@ ConvertResult Amd64OnlyConverter::Convert(
         _convertSegment(fileBytes, ph, result);
     result.Bytes = std::move(fileBytes);
     return result;
+}
+
+std::vector<Amd64OnlyResidualSite> Amd64OnlyConverter::ScanResidual(
+    const std::vector<std::uint8_t>& fileBytes,
+    const std::vector<Domain::ProgramHeader>& codeSegments
+) const {
+    std::vector<Amd64OnlyResidualSite> residuals;
+    for (const auto& ph : codeSegments) {
+        const auto segOffset = static_cast<std::size_t>(ph.Offset);
+        const auto segSize = static_cast<std::size_t>(ph.FileSize);
+        if (segOffset > fileBytes.size() || segSize > fileBytes.size() - segOffset)
+            throw CodegenException("Code segment exceeds the file", ph.Offset);
+        const std::vector<std::uint8_t> seg(
+            fileBytes.begin() + static_cast<std::ptrdiff_t>(segOffset),
+            fileBytes.begin() + static_cast<std::ptrdiff_t>(segOffset + segSize)
+        );
+        const auto matches = _atFileOffset(ph.Offset, [&] { return _scanner->ScanCodeSection(seg, 0, seg.size()); });
+        for (const auto& match : matches) {
+            const auto substitution = _atFileOffset(ph.Offset + match.Offset, [&] { return _matcher->Match(seg.data() + match.Offset, match.Length); });
+            if (substitution.has_value())
+                residuals.push_back({substitution->InstructionName, static_cast<Domain::FileByteOffset>(ph.Offset + match.Offset)});
+        }
+    }
+    return residuals;
 }
 
 }

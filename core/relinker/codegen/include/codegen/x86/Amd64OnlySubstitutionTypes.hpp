@@ -31,6 +31,14 @@ struct Amd64OnlySubstitutionReport {
     Amd64OnlyLowering Lowering;
 };
 
+// An AMD-only instruction still present in an image after conversion. The
+// Intel conversion is meant to leave none behind; a non-empty residual list is
+// what the CLI turns into a failed port.
+struct Amd64OnlyResidualSite {
+    std::string InstructionName;
+    Domain::FileByteOffset Offset;
+};
+
 }
 
 #endif

@@ -10,8 +10,8 @@ namespace Cli {
 
 // Unified Ryty release version. Every component (CLI, Qt6 GUI, Metal bridge,
 // RytyNet bridge, web porting studio and the Apple LC_SOURCE_VERSION) reports
-// this release: 2.0.0.
-constexpr char RYTY_VERSION[] = "2.0.0";
+// this release: 2.1.0.
+constexpr char RYTY_VERSION[] = "2.1.0";
 
 enum class ConsoleMode {
     Auto,
@@ -107,7 +107,7 @@ Args ParseArgs(int argc, char* argv[]);
 // parses "11.0"/"12.3.1" into
 // the LC_BUILD_VERSION encoding (major << 16 | minor << 8 | patch) and throws
 // std::runtime_error on malformed input. EncodeSourceVersion turns the release
-// string "2.0.0" into the LC_SOURCE_VERSION payload (2.0.0.0).
+// string "2.1.0" into the LC_SOURCE_VERSION payload (2.1.0.0).
 std::uint32_t EncodeAppleVersion(const std::string& version);
 std::uint64_t EncodeSourceVersion(const std::string& version);
 // Inverse of EncodeAppleVersion for reports and diagnostics.

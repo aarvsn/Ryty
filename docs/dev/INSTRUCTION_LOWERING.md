@@ -62,6 +62,18 @@ relocated.
 * `Amd64OnlyConverterTests` pins operand decoding (prefixes, REX, memory
   forms), golden stub bodies, executed EXTRQ/INSERTQ/CLZERO/SHA-256 stub
   results, converter-level substitution classification and failure offsets.
+* **Residual scan (2.1.0)**: `IAmd64OnlyConverter::ScanResidual` lists every
+  AMD-only instruction the converter recognizes in a set of code segments.
+  After `--to-intel` the CLI re-scans the finished Linux ELF and fails the
+  port (exit code 2, with the instruction name and offset) if any site
+  survived, so a broken lowering can never ship. `--to-intel --verbose`
+  prints `Intel verification: no AMD-only instructions remain in the ported
+  image` on success. Windows and Apple writers relocate the guest image, so
+  their output layouts are not re-scanned.
+* **Intel host guidance (2.1.0)**: the CLI reads the host CPU vendor with
+  CPUID. On an Intel host without `--to-intel` it prints a warning and records
+  one in the porting report, because AMD-only instructions in the input will
+  fault at runtime.
 * The semantics of the SHA-1 family were validated directly against hardware
   (Intel SDM pseudocode plus probing on a SHA-NI host); the C reference
   models in the tests mirror the validated behaviour, including the

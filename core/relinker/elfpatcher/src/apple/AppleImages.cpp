@@ -144,7 +144,7 @@ std::vector<std::uint8_t> DylibCommandBytes(const std::string& path) {
     cmd->cmdSize = static_cast<std::uint32_t>(bytes.size());
     cmd->nameOffset = sizeof(Cmd);
     cmd->timestamp = 2;
-    cmd->currentVersion = 0x00020000;  // 2.0.0
+    cmd->currentVersion = 0x00020100;  // 2.1.0
     cmd->compatibilityVersion = 0x00010000;
     std::memcpy(bytes.data() + sizeof(Cmd), path.c_str(), path.size() + 1);
     return bytes;
