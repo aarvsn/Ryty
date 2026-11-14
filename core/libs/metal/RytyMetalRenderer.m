@@ -339,5 +339,5 @@ void RytyMetalSetRasterizerDiscardEnabled(int enabled) {
 }
 
 int RytyMetalGetDeviceCapabilities(void) {
-    return 0x00020000; // 2.0.0
+    return 0x00020100; // 2.1.0
 }
