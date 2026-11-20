@@ -15,7 +15,7 @@
 
 namespace {
 
-constexpr std::uint32_t RYTNET_VERSION = 0x00020100u; // 2.1.0
+constexpr std::uint32_t RYTNET_VERSION = 0x00020200u; // 2.2.0
 
 struct RytyNetStatus {
     std::uint32_t structSize;   // sizeof(RytyNetStatus), set by the caller
@@ -34,7 +34,7 @@ int APS5_VABI RytyNetIsEnabled(void) {
     return RytyNet::Bridge().enabled ? 1 : 0;
 }
 
-// The bridge version (1.0.7 -> 0x00010007).
+// The bridge version (2.2.0 -> 0x00020200).
 std::uint32_t APS5_VABI RytyNetVersion(void) {
     return RYTNET_VERSION;
 }

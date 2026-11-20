@@ -1,9 +1,9 @@
-// Ryty Web 2.1.0 - PS4 / PS5 Executable Relinker & Porting Studio Engine
+// Ryty Web 2.2.0 - PS4 / PS5 Executable Relinker & Porting Studio Engine
 // Parses ELF binary structures in browser memory, performs NID analysis,
 // section/segment inspection, hex viewing, report diffing and generates the
 // JSON report. Everything runs client side; no byte ever leaves the browser.
 
-const RYTY_WEB_VERSION = "2.1.0";
+const RYTY_WEB_VERSION = "2.2.0";
 
 let fileBuffer = null;
 let fileName = "";

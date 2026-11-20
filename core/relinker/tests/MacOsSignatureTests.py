@@ -26,7 +26,7 @@ CS_ADHOC = 0x2
 CS_HASHTYPE_SHA256 = 2
 CS_EXECSEG_MAIN_BINARY = 0x1
 PAGE = 4096
-SOURCE_VERSION_2_1_0 = 0x0002010000000000
+SOURCE_VERSION_2_2_0 = 0x0002020000000000
 
 
 class MacOsSignatureTests(unittest.TestCase):
@@ -59,11 +59,11 @@ class MacOsSignatureTests(unittest.TestCase):
         self.assertEqual(offset, 32 + sizeofcmds)
         return commands
 
-    def test_source_version_is_2_1_0(self):
+    def test_source_version_is_2_2_0(self):
         for cmd, offset, _ in self.load_commands():
             if cmd == LC_SOURCE_VERSION:
                 version = struct.unpack_from("<Q", self.image, offset + 8)[0]
-                self.assertEqual(version, SOURCE_VERSION_2_1_0)
+                self.assertEqual(version, SOURCE_VERSION_2_2_0)
                 return
         self.fail("LC_SOURCE_VERSION missing")
 

@@ -217,10 +217,10 @@ void TestAppleVersionHelpers() {
     threw = false;
     try { (void)Cli::EncodeAppleVersion("1.2.3.4"); } catch (const std::exception&) { threw = true; }
     assert(threw);
-    // LC_SOURCE_VERSION packing: matches the 2.1.0 writer convention.
-    assert(Cli::EncodeSourceVersion("2.1.0") == 0x0002010000000000ULL);
+    // LC_SOURCE_VERSION packing: matches the 2.2.0 writer convention.
+    assert(Cli::EncodeSourceVersion("2.2.0") == 0x0002020000000000ULL);
     assert(Cli::EncodeSourceVersion("1.2.3") == 0x0001020300000000ULL);
-    assert(Cli::EncodeSourceVersion(Cli::RYTY_VERSION) == 0x0002010000000000ULL);
+    assert(Cli::EncodeSourceVersion(Cli::RYTY_VERSION) == 0x0002020000000000ULL);
     std::cout << "  -> PASSED!\n";
 }
 
@@ -313,7 +313,7 @@ void TestAppleImages() {
     Elfpatcher::Apple::MachOOptions options;
     options.minOs = 0x000C0300u;
     // The arm64 launcher slice is a well-formed MH_MAGIC_64 arm64 executable.
-    const auto launcher = Elfpatcher::Apple::MakeArm64LauncherSlice(options, "2.1.0");
+    const auto launcher = Elfpatcher::Apple::MakeArm64LauncherSlice(options, "2.2.0");
     assert(launcher.size() > 0x2000);
     std::uint32_t magic = 0, cpuType = 0;
     std::memcpy(&magic, launcher.data(), 4);
@@ -326,7 +326,7 @@ void TestAppleImages() {
 
     // The iOS guest image embeds the payload and self-verifies.
     std::vector<std::uint8_t> payload(0x1234, 0x5A);
-    const auto iosImage = Elfpatcher::Apple::MakeIosGuestImage(payload, options, "2.1.0");
+    const auto iosImage = Elfpatcher::Apple::MakeIosGuestImage(payload, options, "2.2.0");
     std::memcpy(&cpuType, iosImage.data() + 4, 4);
     assert(cpuType == 0x0100000cu);
     assert(iosImage.size() > payload.size());
@@ -346,7 +346,7 @@ void TestAppleImages() {
         simOptions.platform = Elfpatcher::Apple::MachOOptions::Platform::IosSimulator;
         const std::string jitPlist = "<plist version=\"1.0\"><dict/></plist>";
         simOptions.entitlements.assign(jitPlist.begin(), jitPlist.end());
-        const auto simImage = Elfpatcher::Apple::MakeIosGuestImage(payload, simOptions, "2.1.0");
+        const auto simImage = Elfpatcher::Apple::MakeIosGuestImage(payload, simOptions, "2.2.0");
         std::memcpy(&cpuType, simImage.data() + 4, 4);
         assert(cpuType == 0x0100000cu);
         // Walk the load commands: exactly one LC_BUILD_VERSION, platform 7.
@@ -693,7 +693,7 @@ void TestMetalBridge() {
     assert(RytyMetalSupportsFeatureSet(0) != 0);
     RytyMetalSetSampleCount(4);
     RytyMetalSetRasterizerDiscardEnabled(0);
-    assert(RytyMetalGetDeviceCapabilities() == 0x00020100);
+    assert(RytyMetalGetDeviceCapabilities() == 0x00020200);
 
     std::cout << "  -> PASSED!\n";
 }
@@ -713,7 +713,7 @@ void TestByteIo() {
 
 void TestRytyNetBridge() {
     std::cout << "[Test] Running TestRytyNetBridge...\n";
-    assert(RytyNetVersion() == 0x00020100u);
+    assert(RytyNetVersion() == 0x00020200u);
 
     bool isHttps = false;
     std::string host, path;

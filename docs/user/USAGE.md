@@ -44,7 +44,7 @@ checks `LC_BUILD_VERSION` (see `--verify` below).
 | `--ios`, `--target ios` | Produce an experimental iOS arm64 guest container (see below). |
 | `--ios-simulator`, `--target ios-sim` | Produce the same arm64 guest container for the iOS Simulator: `LC_BUILD_VERSION` platform 7, provisioning-free `.app` bundles, device-only options rejected. |
 | `--target <linux\|windows\|macos\|ios\|ios-sim>` | Target system selector; equivalent to the individual flags. |
-| `--version`, `-V` | Print `ryty 2.1.0` and exit. |
+| `--version`, `-V` | Print `ryty 2.2.0` and exit. |
 | `--config <file>` | Apply INI-style options from a file before the remaining command line flags (new in 2.0.0, see below). |
 | `--batch <dir>` | Batch mode: port every ELF image in `<dir>` (new in 2.0.0, see below). |
 | `--batch-out <dir>` | Output directory for `--batch` (default `<batch dir>/ported`). |
@@ -195,7 +195,7 @@ the same schema per file plus a `ryty-batch-report/1` summary):
 {
   "schema": "ryty-port-report/2",
   "tool": "ryty",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "scheme": {
     "system": "linux",
     "format": "SysV ELF64",

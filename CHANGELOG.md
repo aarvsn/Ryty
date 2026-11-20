@@ -3,6 +3,14 @@
 Releases before 1.0.7 predate this file; their history lives in the commit
 log and the existing documentation.
 
+## 2.2.0
+
+### Version
+
+* Every component now reports `2.2.0`: the CLI (`--version`), the Qt6 GUI,
+  the RytyNet bridge (`RYTNET_VERSION`, `User-Agent`), the Metal bridge
+  capability value and the Apple `LC_SOURCE_VERSION` payload (`2.2.0.0`).
+
 ## 2.1.0
 
 This release focuses on Intel CPU support: the AMD-only instruction lowering

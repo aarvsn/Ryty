@@ -35,7 +35,7 @@ QGroupBox* Group(const QString& title, QLayout* layout) {
 
 namespace Ryty {
 
-constexpr char GuiVersion[] = "2.1.0";
+constexpr char GuiVersion[] = "2.2.0";
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), _settings(this) {
     setWindowTitle(QString("Ryty %1 - PS4 / PS5 executable porter").arg(QLatin1String(GuiVersion)));
@@ -465,6 +465,8 @@ void MainWindow::ShowAbout() {
                 ".app/.ipa bundles, provisioning profiles and signature-aware verification.<br/><br/>"
                 "Also in 2.0.0: dark/light theme, drag &amp; drop, live progress, persisted options, "
                 "log export, batch mode, output verification and verbose diagnostics.<br/><br/>"
+                "Also in 2.2.0: sceKeyboardGetKey2Char now translates the 106-key (Japanese) "
+                "keyboard arrangement instead of rejecting it.<br/><br/>"
                 "Ryty is a fork of AnyPS5, licensed under the GNU GPL v2.")
             .arg(QLatin1String(GuiVersion)));
 }

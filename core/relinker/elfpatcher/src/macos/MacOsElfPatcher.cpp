@@ -115,7 +115,7 @@ extern "C" void RytyMetalSetRasterizerDiscardEnabled(int enabled) {
     (void)enabled;
 }
 extern "C" int RytyMetalGetDeviceCapabilities(void) {
-    return 0x00020100; // 2.1.0
+    return 0x00020200; // 2.2.0
 }
 #endif
 
