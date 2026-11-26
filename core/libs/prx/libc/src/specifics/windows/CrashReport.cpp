@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <cstdlib>
+#include <cstring>
 #include <utility>
 #include <mutex>
 #include "Sse4aEmulation.hpp"
@@ -234,6 +235,93 @@ bool HandleSse4a(EXCEPTION_POINTERS* info) {
     return true;
 }
 
+constexpr std::uint64_t kVectorComponents = 0xe4;
+constexpr std::size_t kXSaveAreaSize = 4096;
+
+struct XStateComponent {
+    std::uint32_t standardOffset = 0;
+    std::uint32_t size = 0;
+    bool align64 = false;
+};
+
+struct ContextChunk {
+    LONG offset;
+    DWORD length;
+};
+
+struct ContextEx {
+    ContextChunk all, legacy, xstate;
+};
+
+XStateComponent g_xstateComponents[64];
+
+std::uint64_t ReadVectorComponents() {
+    unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
+    asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(1), "c"(0));
+    if ((ecx & (1u << 27)) == 0) return 0;
+    unsigned low = 0, high = 0;
+    asm volatile("xgetbv" : "=a"(low), "=d"(high) : "c"(0));
+    const std::uint64_t enabled = ((static_cast<std::uint64_t>(high) << 32) | low) & kVectorComponents;
+    for (unsigned i = 2; i < 64; ++i) {
+        if (((enabled >> i) & 1) == 0) continue;
+        asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0xd), "c"(i));
+        g_xstateComponents[i] = {ebx, eax, (ecx & 2) != 0};
+    }
+    return enabled;
+}
+
+const std::uint64_t g_vectorComponents = ReadVectorComponents();
+
+void SaveXState(unsigned char* area, std::uint64_t mask) {
+    asm volatile("xsave64 %0" : "+m"(*reinterpret_cast<unsigned char(*)[kXSaveAreaSize]>(area)) : "a"(static_cast<std::uint32_t>(mask)), "d"(static_cast<std::uint32_t>(mask >> 32)));
+}
+
+void RestoreXState(unsigned char* area, std::uint64_t mask) {
+    asm volatile("xrstor64 %0" : : "m"(*reinterpret_cast<unsigned char(*)[kXSaveAreaSize]>(area)), "a"(static_cast<std::uint32_t>(mask)), "d"(static_cast<std::uint32_t>(mask >> 32)) : "memory");
+}
+
+bool RepairContextXState(CONTEXT* context, const unsigned char* area, std::uint64_t mask) {
+    if ((context->ContextFlags & CONTEXT_XSTATE) != CONTEXT_XSTATE) return false;
+    std::uint64_t live = 0;
+    std::memcpy(&live, area + 512, sizeof(live));
+    live &= mask;
+    auto* ex = reinterpret_cast<ContextEx*>(context + 1);
+    auto* chunk = reinterpret_cast<unsigned char*>(ex) + ex->xstate.offset;
+    const std::uint64_t length = ex->xstate.length;
+    if (length < 64) return false;
+    std::uint64_t header[2];
+    std::memcpy(header, chunk, sizeof(header));
+    if ((live & ~header[0]) == 0) return false;
+    constexpr std::uint64_t compacted = 1ull << 63;
+    std::uint64_t place[64] = {};
+    std::uint64_t layout = 0;
+    if ((header[1] & compacted) != 0) {
+        if ((header[1] & ~compacted & ~3ull & ~mask) != 0) return false;
+        layout = (header[1] & ~compacted) | mask;
+        std::uint64_t offset = 576;
+        for (unsigned i = 2; i < 64; ++i) {
+            if (((layout >> i) & 1) == 0) continue;
+            if (g_xstateComponents[i].align64) offset = (offset + 63) & ~63ull;
+            place[i] = offset;
+            offset += g_xstateComponents[i].size;
+        }
+        if (offset - 512 > length) return false;
+    } else {
+        for (unsigned i = 2; i < 64; ++i) {
+            if (((mask >> i) & 1) == 0) continue;
+            place[i] = g_xstateComponents[i].standardOffset;
+            if (place[i] + g_xstateComponents[i].size - 512 > length) return false;
+        }
+    }
+    for (unsigned i = 2; i < 64; ++i) {
+        if (((live >> i) & 1) != 0) std::memcpy(chunk + (place[i] - 512), area + g_xstateComponents[i].standardOffset, g_xstateComponents[i].size);
+    }
+    header[0] = (header[0] & ~mask) | live;
+    if ((header[1] & compacted) != 0) header[1] = compacted | (header[1] & 3ull) | layout;
+    std::memcpy(chunk, header, sizeof(header));
+    return true;
+}
+
 LONG WINAPI ReportCrash(EXCEPTION_POINTERS* info) {
     static std::atomic<bool> reported{false};
     const auto* fault = info->ExceptionRecord;
@@ -333,6 +421,18 @@ LONG WINAPI ReportCrash(EXCEPTION_POINTERS* info) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+LONG WINAPI ReportCrashKeepingXState(EXCEPTION_POINTERS* info) {
+    const std::uint64_t mask = g_vectorComponents;
+    if (mask == 0) return ReportCrash(info);
+    alignas(64) unsigned char area[kXSaveAreaSize];
+    std::memset(area + 512, 0, 64);
+    SaveXState(area, mask);
+    const LONG result = ReportCrash(info);
+    if (result == EXCEPTION_CONTINUE_EXECUTION) RepairContextXState(info->ContextRecord, area, mask);
+    RestoreXState(area, mask);
+    return result;
+}
+
 // abort() and the UCRT's invalid-parameter path end the process with a silent fast fail
 // (0xc0000409); both are reported with the calling thread's stack first.
 void ReportBacktrace(const char* what) {
@@ -366,7 +466,7 @@ struct ExitReporter {
 const bool g_crashReportInstalled = [] {
     g_sse4aEmulation = !IsEnvironmentSet("APS5_NO_SSE4A_EMULATION");
     g_sse4aTrace = IsEnvironmentSet("APS5_TRACE_SSE4A");
-    AddVectoredExceptionHandler(1, ReportCrash);
+    AddVectoredExceptionHandler(1, ReportCrashKeepingXState);
     std::signal(SIGABRT, AbortSignalHandler);
     _set_invalid_parameter_handler(InvalidParameterHandler);
     InstallWatch();
